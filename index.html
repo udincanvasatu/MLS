@@ -1,0 +1,754 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Data Viewer — Summary MLS</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .table-fixed thead th { position: sticky; top: 0; background: white; z-index: 10; }
+    .small { font-size: 0.85rem; }
+    .chip { background:#eef2ff; color:#3730a3; padding:4px 8px; border-radius:999px; font-weight:600; }
+    pre.json-preview { max-height: 260px; overflow:auto; background:#0b1220; color:#e6eef8; padding:12px; border-radius:8px; }
+    .muted { color:#6b7280; }
+    pre.mismatch { max-height: 220px; overflow:auto; background:#111827; color:#e5e7eb; padding:10px; border-radius:8px; }
+  </style>
+</head>
+<body class="bg-slate-50 min-h-screen p-6">
+  <div class="max-w-7xl mx-auto">
+    <header class="mb-6">
+      <h1 class="text-2xl font-semibold text-slate-800">Summary MLS Viewer</h1>
+      <p class="text-sm text-slate-500 mt-1">Mencoba memuat <strong>Summary MLS.json</strong> dari folder yang sama. Jika gagal, pilih file secara manual.</p>
+    </header>
+
+    <main class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <!-- Sidebar Controls -->
+      <section class="lg:col-span-1 bg-white p-4 rounded-lg shadow-sm">
+        <div class="mb-3">
+          <div class="text-sm font-medium text-slate-700">Status Load</div>
+          <div id="loadStatus" class="text-sm muted mt-1">Mencoba memuat Summary MLS.json …</div>
+        </div>
+
+        <label class="block text-sm font-medium text-slate-700 mb-2">Jika fetch gagal, pilih file</label>
+        <input id="fileInput" type="file" accept=".json" class="block w-full text-sm mb-2" />
+        <div class="flex gap-2 mb-3">
+          <button id="btnLoadFile" class="flex-1 px-3 py-2 bg-sky-600 text-white rounded-md">Load from file</button>
+          <button id="btnReload" class="px-3 py-2 bg-slate-200 rounded-md">Reload fetch</button>
+        </div>
+
+        <hr class="my-4" />
+
+        <div class="space-y-3">
+          <div>
+            <label class="text-sm font-medium text-slate-700">Pencarian Global</label>
+            <input id="globalSearch" class="w-full mt-1 p-2 border rounded-md text-sm" placeholder="Cari No Polisi, Sopir, SJ, dll" />
+          </div>
+
+          <!-- ✅ NEW: Multi FO Filter -->
+          <div>
+            <label class="text-sm font-medium text-slate-700">
+              Filter Multi No FO <span class="text-xs text-slate-400">(auto filter)</span>
+            </label>
+            <textarea id="multiFO" rows="4"
+              class="w-full mt-1 p-2 border rounded-md text-sm"
+              placeholder="Paste banyak FO (boleh dari Excel, ada koma juga gapapa)
+contoh:
+6100191934
+6,100,194,413"></textarea>
+            <div class="flex gap-2 mt-2">
+              <button id="btnClearFO" class="px-3 py-1 bg-slate-100 rounded-md text-sm">Clear FO</button>
+              <button id="btnUsePairsFO" class="px-3 py-1 bg-indigo-50 rounded-md text-sm">Ambil FO dari Pair</button>
+            </div>
+          </div>
+
+          <!-- ✅ NEW: FO + Netto Pairs Validation -->
+          <div>
+            <label class="text-sm font-medium text-slate-700">
+              Input FO + Netto (opsional) <span class="text-xs text-slate-400">(cek mismatch)</span>
+            </label>
+            <textarea id="foNettoPairs" rows="4"
+              class="w-full mt-1 p-2 border rounded-md text-sm"
+              placeholder="Copy dari Excel 2 kolom (FO[TAB]Netto) / bisa spasi / koma
+contoh:
+6100191934    24000
+6100194413    25500"></textarea>
+
+            <div class="flex items-center justify-between mt-2">
+              <label class="flex items-center gap-2 text-sm text-slate-600">
+                <input id="chkValidateNetto" type="checkbox" class="h-4 w-4" checked />
+                Validasi Netto saat ada pair
+              </label>
+              <button id="btnClearPairs" class="px-3 py-1 bg-slate-100 rounded-md text-sm">Clear Pair</button>
+            </div>
+
+            <!-- Summary mismatch -->
+            <div class="mt-3 p-3 rounded-md border bg-slate-50">
+              <div class="text-sm font-medium text-slate-700 mb-2">Summary FO / Netto</div>
+              <div class="grid grid-cols-2 gap-2 text-xs">
+                <div class="px-2 py-1 rounded bg-white border">FO Input: <span id="sumFoInput" class="font-semibold">0</span></div>
+                <div class="px-2 py-1 rounded bg-white border">FO Found: <span id="sumFoFound" class="font-semibold">0</span></div>
+                <div class="px-2 py-1 rounded bg-white border">FO Missing: <span id="sumFoMissing" class="font-semibold text-rose-600">0</span></div>
+                <div class="px-2 py-1 rounded bg-white border">Netto Mismatch: <span id="sumNettoMismatch" class="font-semibold text-amber-700">0</span></div>
+              </div>
+
+              <div class="mt-2">
+                <button id="btnShowMismatch" class="w-full px-3 py-2 bg-rose-600 text-white rounded-md text-sm">
+                  Lihat Detail Mismatch
+                </button>
+                <div id="mismatchWrap" class="mt-2 hidden">
+                  <pre id="mismatchDetail" class="mismatch">Belum ada mismatch.</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label class="text-sm font-medium text-slate-700">Filter Netto Range</label>
+            <div class="flex gap-2 mt-1">
+              <input id="minNetto" type="number" placeholder="Min" class="w-1/2 p-2 border rounded-md text-sm" />
+              <input id="maxNetto" type="number" placeholder="Max" class="w-1/2 p-2 border rounded-md text-sm" />
+            </div>
+          </div>
+
+          <div>
+            <label class="text-sm font-medium text-slate-700">Filter Tanggal Daftar</label>
+            <div class="flex gap-2 mt-1">
+              <input id="fromDate" type="date" class="w-1/2 p-2 border rounded-md text-sm" />
+              <input id="toDate" type="date" class="w-1/2 p-2 border rounded-md text-sm" />
+            </div>
+          </div>
+
+          <div>
+            <label class="text-sm font-medium text-slate-700">Filter Kolom Spesifik</label>
+            <select id="colFilterSelect" class="w-full mt-1 p-2 border rounded-md text-sm">
+              <option value="">Pilih kolom untuk filter</option>
+            </select>
+            <input id="colFilterValue" placeholder="Nilai filter (contains)" class="w-full mt-2 p-2 border rounded-md text-sm" />
+          </div>
+
+          <div>
+            <label class="text-sm font-medium text-slate-700">Kolom yang Ditampilkan</label>
+            <div id="colsToggle" class="mt-2 grid grid-cols-2 gap-2 text-sm"></div>
+          </div>
+
+          <div class="flex gap-2">
+            <button id="btnApply" class="flex-1 px-3 py-2 bg-emerald-600 text-white rounded-md">Apply Filters</button>
+            <button id="btnResetFilters" class="px-3 py-2 bg-yellow-100 rounded-md">Reset</button>
+          </div>
+
+          <div class="mt-2">
+            <button id="btnDownload" class="w-full px-3 py-2 bg-indigo-600 text-white rounded-md">Download Filtered JSON</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Table and preview -->
+      <section class="lg:col-span-3">
+        <div class="bg-white p-4 rounded-lg shadow-sm mb-4">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-3">
+              <span class="chip">Rows: <span id="rowCount" class="ml-2 font-normal">0</span></span>
+              <div class="small text-slate-500">Sort by</div>
+              <select id="sortSelect" class="p-1 border rounded-md text-sm">
+                <option value="">-- none --</option>
+              </select>
+              <select id="sortDir" class="p-1 border rounded-md text-sm">
+                <option value="asc">Asc</option>
+                <option value="desc">Desc</option>
+              </select>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <div class="small text-slate-500">Per halaman</div>
+              <select id="perPage" class="p-1 border rounded-md text-sm">
+                <option>10</option><option>25</option><option>50</option><option>100</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table id="dataTable" class="min-w-full table-fixed border-collapse">
+              <thead class="bg-slate-50">
+                <tr id="tableHead"></tr>
+              </thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+
+          <div class="mt-3 flex items-center justify-between">
+            <div class="text-sm text-slate-500">Menampilkan <span id="showing"></span></div>
+            <div class="flex items-center gap-2">
+              <button id="prevPage" class="px-3 py-1 bg-slate-100 rounded-md">Prev</button>
+              <div id="pageInfo" class="text-sm"></div>
+              <button id="nextPage" class="px-3 py-1 bg-slate-100 rounded-md">Next</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-white p-4 rounded-lg shadow-sm">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-sm font-medium text-slate-700">Preview JSON</h3>
+            <div class="text-xs text-slate-400">Bagian awal data</div>
+          </div>
+          <pre id="jsonPreview" class="json-preview">Belum ada data.</pre>
+        </div>
+      </section>
+    </main>
+
+    <footer class="mt-6 text-xs text-slate-500 text-center">
+      Runs locally. Data tidak dikirim ke server.
+    </footer>
+  </div>
+
+  <script>
+    // =========================
+    // State
+    // =========================
+    let rawData = [];
+    let filtered = [];
+    let visibleCols = [];
+    let currentPage = 1;
+    let perPage = 10;
+
+    // =========================
+    // Elements
+    // =========================
+    const loadStatus = document.getElementById('loadStatus');
+    const fileInput = document.getElementById('fileInput');
+    const btnLoadFile = document.getElementById('btnLoadFile');
+    const btnReload = document.getElementById('btnReload');
+    const globalSearch = document.getElementById('globalSearch');
+    const minNetto = document.getElementById('minNetto');
+    const maxNetto = document.getElementById('maxNetto');
+    const fromDate = document.getElementById('fromDate');
+    const toDate = document.getElementById('toDate');
+    const colFilterSelect = document.getElementById('colFilterSelect');
+    const colFilterValue = document.getElementById('colFilterValue');
+    const btnApply = document.getElementById('btnApply');
+    const btnResetFilters = document.getElementById('btnResetFilters');
+    const btnDownload = document.getElementById('btnDownload');
+    const colsToggle = document.getElementById('colsToggle');
+    const tableHead = document.getElementById('tableHead');
+    const tableBody = document.getElementById('tableBody');
+    const rowCount = document.getElementById('rowCount');
+    const jsonPreview = document.getElementById('jsonPreview');
+    const perPageEl = document.getElementById('perPage');
+    const prevPage = document.getElementById('prevPage');
+    const nextPage = document.getElementById('nextPage');
+    const pageInfo = document.getElementById('pageInfo');
+    const showing = document.getElementById('showing');
+    const sortSelect = document.getElementById('sortSelect');
+    const sortDirEl = document.getElementById('sortDir');
+
+    // NEW
+    const multiFOEl = document.getElementById('multiFO');
+    const btnClearFO = document.getElementById('btnClearFO');
+    const foNettoPairsEl = document.getElementById('foNettoPairs');
+    const chkValidateNetto = document.getElementById('chkValidateNetto');
+    const btnClearPairs = document.getElementById('btnClearPairs');
+    const btnUsePairsFO = document.getElementById('btnUsePairsFO');
+
+    const sumFoInput = document.getElementById('sumFoInput');
+    const sumFoFound = document.getElementById('sumFoFound');
+    const sumFoMissing = document.getElementById('sumFoMissing');
+    const sumNettoMismatch = document.getElementById('sumNettoMismatch');
+    const btnShowMismatch = document.getElementById('btnShowMismatch');
+    const mismatchWrap = document.getElementById('mismatchWrap');
+    const mismatchDetail = document.getElementById('mismatchDetail');
+
+    // =========================
+    // Utilities
+    // =========================
+    function safeGet(obj, key) {
+      return obj && Object.prototype.hasOwnProperty.call(obj, key) ? obj[key] : '';
+    }
+
+    // hilangkan koma/spasi, biar FO/IML/Netto konsisten
+    function cleanNumStr(v) {
+      if (v === null || v === undefined) return '';
+      return String(v).replace(/,/g, '').replace(/\s+/g, '').trim();
+    }
+
+    function toNumberLoose(v) {
+      const s = cleanNumStr(v);
+      if (!s) return NaN;
+      const n = Number(s);
+      return Number.isFinite(n) ? n : NaN;
+    }
+
+    function isNoCommaColumn(colName) {
+      const c = String(colName || '').toLowerCase();
+      // ✅ FO & No IML jangan koma-koma
+      return (c === 'fo') || c.includes('no iml') || (c === 'noiml') || (c.includes('iml'));
+    }
+
+    function detectColumns(data) {
+      const cols = new Set();
+      data.forEach(r => Object.keys(r).forEach(k => cols.add(k)));
+      return Array.from(cols);
+    }
+
+    function renderColsToggle(cols) {
+      colsToggle.innerHTML = '';
+      colFilterSelect.innerHTML = '<option value="">Pilih kolom untuk filter</option>';
+      sortSelect.innerHTML = '<option value="">-- none --</option>';
+
+      cols.forEach(c => {
+        const id = 'col_' + c.replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_]/g,'');
+
+        const wrapper = document.createElement('label');
+        wrapper.className = 'flex items-center gap-2';
+        wrapper.innerHTML = `<input type="checkbox" id="${id}" checked class="h-4 w-4"> <span class="text-sm">${c}</span>`;
+        colsToggle.appendChild(wrapper);
+
+        document.getElementById(id).addEventListener('change', () => {
+          visibleCols = cols.filter(col => document.getElementById('col_' + col.replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_]/g,'')).checked);
+          renderTable();
+        });
+
+        const opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = c;
+        colFilterSelect.appendChild(opt);
+
+        const sopt = document.createElement('option');
+        sopt.value = c;
+        sopt.textContent = c;
+        sortSelect.appendChild(sopt);
+      });
+
+      visibleCols = cols.slice(0, 8);
+      cols.forEach(c => {
+        const el = document.getElementById('col_' + c.replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_]/g,''));
+        if (el) el.checked = visibleCols.includes(c);
+      });
+    }
+
+    // =========================
+    // Multi FO parsing
+    // =========================
+    function parseFOList(text) {
+      // split by newline/space/tab; bersihin koma
+      return (text || '')
+        .split(/\s+/)
+        .map(x => cleanNumStr(x))
+        .filter(x => x.length > 0);
+    }
+
+    // Parse pasangan FO + Netto (copy dari Excel)
+    // Format fleksibel:
+    // 6100191934<TAB>24000
+    // 6100191934 24000
+    // 6,100,191,934, 24,000
+    function parseFONettoPairs(text) {
+      const lines = (text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const map = new Map(); // fo -> expectedNettoNumber
+      const badLines = [];
+
+      for (const line of lines) {
+        // pecah berdasarkan tab dulu, kalau ga ada pakai spasi atau koma+spasi
+        let parts = line.split('\t').map(p => p.trim()).filter(Boolean);
+
+        if (parts.length < 2) {
+          parts = line.split(/[ ,;]+/).map(p => p.trim()).filter(Boolean);
+        }
+
+        if (parts.length < 2) {
+          badLines.push(line);
+          continue;
+        }
+
+        const fo = cleanNumStr(parts[0]);
+        const netto = toNumberLoose(parts[parts.length - 1]); // ambil token terakhir sbg netto
+
+        if (!fo || Number.isNaN(netto)) {
+          badLines.push(line);
+          continue;
+        }
+
+        map.set(fo, netto);
+      }
+
+      return { map, badLines };
+    }
+
+    // =========================
+    // Validation FO/Netto summary
+    // =========================
+    function buildIndexByFO(data) {
+      // fo -> array rows
+      const idx = new Map();
+      data.forEach(row => {
+        const foRaw = safeGet(row, 'FO');
+        const fo = cleanNumStr(foRaw);
+        if (!fo) return;
+        if (!idx.has(fo)) idx.set(fo, []);
+        idx.get(fo).push(row);
+      });
+      return idx;
+    }
+
+    function uniq(arr) {
+      return Array.from(new Set(arr));
+    }
+
+    function validateFoNetto(foList, pairMap) {
+      const idx = buildIndexByFO(rawData);
+
+      let found = 0;
+      const missing = [];
+      const nettoMismatch = [];
+      const nettoOk = [];
+
+      for (const fo of foList) {
+        const rows = idx.get(fo);
+        if (!rows || rows.length === 0) {
+          missing.push(fo);
+          continue;
+        }
+        found++;
+
+        // kalau ada expected netto, cek match
+        if (pairMap && pairMap.has(fo) && chkValidateNetto.checked) {
+          const expected = pairMap.get(fo);
+          const actuals = rows.map(r => toNumberLoose(safeGet(r, 'Netto'))).filter(n => !Number.isNaN(n));
+          const actualUniq = uniq(actuals);
+
+          const ok = actualUniq.some(n => n === expected);
+          if (!ok) {
+            nettoMismatch.push({
+              fo,
+              expected,
+              actual: actualUniq.length ? actualUniq.join(', ') : '(Netto kosong/tidak valid di data)'
+            });
+          } else {
+            nettoOk.push(fo);
+          }
+        }
+      }
+
+      // update UI summary
+      sumFoInput.textContent = foList.length;
+      sumFoFound.textContent = found;
+      sumFoMissing.textContent = missing.length;
+      sumNettoMismatch.textContent = nettoMismatch.length;
+
+      // detail mismatch text
+      const lines = [];
+      const pairsPresent = pairMap && pairMap.size > 0;
+
+      if (missing.length) {
+        lines.push('=== FO TIDAK DITEMUKAN DI DATA ===');
+        missing.slice(0, 200).forEach(x => lines.push('- ' + x));
+        if (missing.length > 200) lines.push(`... (${missing.length - 200} lagi)`);
+        lines.push('');
+      }
+
+      if (pairsPresent) {
+        if (nettoMismatch.length) {
+          lines.push('=== NETTO TIDAK SESUAI (FO ketemu tapi Netto beda) ===');
+          nettoMismatch.slice(0, 200).forEach(x => {
+            lines.push(`- FO ${x.fo} | Expected Netto: ${x.expected} | Actual Netto di data: ${x.actual}`);
+          });
+          if (nettoMismatch.length > 200) lines.push(`... (${nettoMismatch.length - 200} lagi)`);
+          lines.push('');
+        } else {
+          lines.push('=== NETTO SESUAI ===');
+          lines.push('Semua FO yang diinput (yang punya expected netto) sesuai dengan data.');
+          lines.push('');
+        }
+      } else {
+        lines.push('Info: Pair FO+Netto belum diisi / kosong. Validasi Netto tidak dijalankan.');
+      }
+
+      mismatchDetail.textContent = lines.join('\n');
+    }
+
+    // =========================
+    // Filters
+    // =========================
+    function applyFilters() {
+      const g = globalSearch.value.trim().toLowerCase();
+      const minN = minNetto.value ? Number(minNetto.value) : null;
+      const maxN = maxNetto.value ? Number(maxNetto.value) : null;
+      const fromD = fromDate.value ? new Date(fromDate.value) : null;
+      const toD = toDate.value ? new Date(toDate.value) : null;
+      const colFilter = colFilterSelect.value;
+      const colFilterVal = colFilterValue.value.trim().toLowerCase();
+
+      // ✅ Multi FO list
+      const foListFromBox = parseFOList(multiFOEl.value);
+
+      // ✅ Pair FO+Netto (optional)
+      const { map: pairMap } = parseFONettoPairs(foNettoPairsEl.value);
+
+      // effective FO list:
+      // - kalau multiFO ada, pakai itu
+      // - kalau multiFO kosong tapi pairs ada, pakai FO dari pairs
+      const effectiveFO = foListFromBox.length ? foListFromBox : Array.from(pairMap.keys());
+
+      // buat Set biar cepat
+      const foSet = new Set(effectiveFO);
+
+      filtered = rawData.filter(row => {
+        // filter FO (kalau ada input)
+        if (foSet.size > 0) {
+          const foVal = cleanNumStr(safeGet(row, 'FO'));
+          if (!foSet.has(foVal)) return false;
+        }
+
+        // global search
+        if (g) {
+          const s = JSON.stringify(row).toLowerCase();
+          if (!s.includes(g)) return false;
+        }
+
+        // Netto range
+        const netto = toNumberLoose(safeGet(row, 'Netto'));
+        if (!Number.isNaN(netto)) {
+          if (minN !== null && netto < minN) return false;
+          if (maxN !== null && netto > maxN) return false;
+        } else {
+          if (minN !== null || maxN !== null) return false;
+        }
+
+        // date range
+        const t = safeGet(row, 'Tanggal Daftar') || safeGet(row, 'Tanggal') || '';
+        if (t && (fromD || toD)) {
+          const dt = new Date(t);
+          if (fromD && dt < fromD) return false;
+          if (toD && dt > new Date(toD.getTime() + 24*60*60*1000 - 1)) return false;
+        } else if ((fromD || toD) && !t) {
+          return false;
+        }
+
+        // specific column filter
+        if (colFilter && colFilterVal) {
+          const val = String(safeGet(row, colFilter) ?? '').toLowerCase();
+          if (!val.includes(colFilterVal)) return false;
+        }
+
+        return true;
+      });
+
+      // sort
+      const sortBy = sortSelect.value;
+      const sortDir = sortDirEl.value;
+      if (sortBy) {
+        filtered.sort((a,b) => {
+          const va = safeGet(a, sortBy);
+          const vb = safeGet(b, sortBy);
+
+          const na = toNumberLoose(va);
+          const nb = toNumberLoose(vb);
+
+          if (!Number.isNaN(na) && !Number.isNaN(nb)) {
+            return sortDir === 'asc' ? na - nb : nb - na;
+          }
+
+          const sa = String(va).toLowerCase();
+          const sb = String(vb).toLowerCase();
+          if (sa < sb) return sortDir === 'asc' ? -1 : 1;
+          if (sa > sb) return sortDir === 'asc' ? 1 : -1;
+          return 0;
+        });
+      }
+
+      // ✅ update validation summary (bukan cuma filter)
+      const foForValidation = effectiveFO;
+      validateFoNetto(foForValidation, pairMap);
+
+      currentPage = 1;
+      renderTable();
+    }
+
+    function renderTable() {
+      perPage = Number(perPageEl.value);
+      const total = filtered.length;
+      rowCount.textContent = total;
+
+      const totalPages = Math.max(1, Math.ceil(total / perPage));
+      if (currentPage > totalPages) currentPage = totalPages;
+
+      const start = (currentPage - 1) * perPage;
+      const end = start + perPage;
+      const pageRows = filtered.slice(start, end);
+
+      tableHead.innerHTML = '';
+      visibleCols.forEach(c => {
+        const th = document.createElement('th');
+        th.className = 'px-3 py-2 text-left text-sm border-b';
+        th.textContent = c;
+        tableHead.appendChild(th);
+      });
+
+      tableBody.innerHTML = '';
+      pageRows.forEach(r => {
+        const tr = document.createElement('tr');
+        visibleCols.forEach(c => {
+          const td = document.createElement('td');
+          td.className = 'px-3 py-2 text-sm border-b align-top';
+
+          let v = safeGet(r, c);
+          if (v === null || v === undefined) v = '';
+
+          // ✅ FO & No IML jangan koma-koma
+          if (isNoCommaColumn(c)) {
+            td.textContent = cleanNumStr(v);
+          } else if (typeof v === 'number') {
+            td.textContent = v.toLocaleString();
+          } else {
+            // kalau string angka, tetap tampil apa adanya
+            td.textContent = v;
+          }
+
+          tr.appendChild(td);
+        });
+        tableBody.appendChild(tr);
+      });
+
+      pageInfo.textContent = `${currentPage} / ${totalPages}`;
+      showing.textContent = `${Math.min(total, start+1)} - ${Math.min(total, end)} of ${total}`;
+      jsonPreview.textContent = JSON.stringify(filtered.slice(0, 50), null, 2);
+    }
+
+    // =========================
+    // Load JSON from relative path
+    // =========================
+    async function tryFetchSummary() {
+      loadStatus.textContent = 'Mencoba memuat Summary MLS.json dari folder yang sama…';
+      try {
+        const res = await fetch('./Summary MLS.json', { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const j = await res.json();
+        rawData = Array.isArray(j) ? j : (j.data || []);
+        if (!rawData.length) {
+          loadStatus.textContent = 'File ditemukan tetapi data kosong atau bukan array.';
+          return;
+        }
+        afterLoad();
+        loadStatus.textContent = 'Berhasil memuat Summary MLS.json';
+      } catch (err) {
+        loadStatus.textContent = 'Gagal fetch Summary MLS.json. Gunakan tombol Load from file atau jalankan server lokal. ' + err.message;
+      }
+    }
+
+    // Load from file input
+    btnLoadFile.addEventListener('click', () => {
+      const f = fileInput.files[0];
+      if (!f) { alert('Pilih file Summary MLS.json terlebih dahulu.'); return; }
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const j = JSON.parse(e.target.result);
+          rawData = Array.isArray(j) ? j : (j.data || []);
+          if (!rawData.length) { alert('File JSON kosong atau format tidak sesuai.'); return; }
+          afterLoad();
+          loadStatus.textContent = 'Berhasil memuat dari file input.';
+        } catch (err) {
+          alert('Gagal parse JSON file: ' + err.message);
+        }
+      };
+      reader.readAsText(f);
+    });
+
+    btnReload.addEventListener('click', tryFetchSummary);
+
+    function afterLoad() {
+      const cols = detectColumns(rawData);
+      renderColsToggle(cols);
+      filtered = rawData.slice();
+
+      sortSelect.innerHTML = '<option value="">-- none --</option>';
+      cols.forEach(c => {
+        const sopt = document.createElement('option');
+        sopt.value = c;
+        sopt.textContent = c;
+        sortSelect.appendChild(sopt);
+      });
+
+      applyFilters();
+    }
+
+    // =========================
+    // Controls
+    // =========================
+    btnApply.addEventListener('click', applyFilters);
+
+    btnResetFilters.addEventListener('click', () => {
+      globalSearch.value = '';
+      minNetto.value = ''; maxNetto.value = '';
+      fromDate.value = ''; toDate.value = '';
+      colFilterSelect.value = ''; colFilterValue.value = '';
+      sortSelect.value = ''; sortDirEl.value = 'asc';
+      perPageEl.value = '10';
+      // tidak menghapus FO/Pairs saat reset filter (biar kamu ga kehilangan list)
+      applyFilters();
+    });
+
+    // ✅ Auto apply saat input FO / pairs / search berubah
+    globalSearch.addEventListener('input', () => applyFilters());
+    colFilterValue.addEventListener('input', () => applyFilters());
+    minNetto.addEventListener('input', () => applyFilters());
+    maxNetto.addEventListener('input', () => applyFilters());
+    fromDate.addEventListener('change', () => applyFilters());
+    toDate.addEventListener('change', () => applyFilters());
+    colFilterSelect.addEventListener('change', () => applyFilters());
+    sortSelect.addEventListener('change', () => applyFilters());
+    sortDirEl.addEventListener('change', () => applyFilters());
+    chkValidateNetto.addEventListener('change', () => applyFilters());
+
+    multiFOEl.addEventListener('input', () => applyFilters());
+    foNettoPairsEl.addEventListener('input', () => applyFilters());
+
+    perPageEl.addEventListener('change', () => { currentPage = 1; renderTable(); });
+    prevPage.addEventListener('click', () => { if (currentPage>1) { currentPage--; renderTable(); } });
+    nextPage.addEventListener('click', () => {
+      const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
+      if (currentPage < totalPages) { currentPage++; renderTable(); }
+    });
+
+    btnDownload.addEventListener('click', () => {
+      if (!filtered || !filtered.length) { alert('Tidak ada data untuk diunduh.'); return; }
+      const blob = new Blob([JSON.stringify(filtered, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'filtered_summary_mls.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    // Buttons FO & pairs
+    btnClearFO.addEventListener('click', () => {
+      multiFOEl.value = '';
+      applyFilters();
+    });
+
+    btnClearPairs.addEventListener('click', () => {
+      foNettoPairsEl.value = '';
+      applyFilters();
+    });
+
+    btnUsePairsFO.addEventListener('click', () => {
+      const { map } = parseFONettoPairs(foNettoPairsEl.value);
+      if (!map.size) { alert('Pair FO+Netto kosong / format belum benar.'); return; }
+      multiFOEl.value = Array.from(map.keys()).join('\n');
+      applyFilters();
+    });
+
+    // Mismatch viewer toggle
+    btnShowMismatch.addEventListener('click', () => {
+      mismatchWrap.classList.toggle('hidden');
+    });
+
+    // Auto try fetch on load
+    window.addEventListener('load', () => {
+      tryFetchSummary();
+    });
+  </script>
+</body>
+</html>
