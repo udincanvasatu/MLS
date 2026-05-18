@@ -747,20 +747,17 @@
             refFileData.forEach(row => {
                 const keyVal = cleanStr(safeGet(row, k));
                 const valVal = v ? cleanStr(safeGet(row, v)) : "";
-                if(keyVal) extractedText += `${keyVal}	${valVal}
-`;
+                if(keyVal) extractedText += `${keyVal}\t${valVal}\n`;
             });
             pairInputEl.value = extractedText.trim();
             refMappingWrap.classList.add('hidden'); refFileInput.value = ""; 
         });
 
         function parsePairs(text) {
-            const lines = (text || '').split(/
-?
-/).map(l => l.trim()).filter(Boolean);
+            const lines = (text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
             const map = new Map();
             for (const line of lines) {
-                let parts = line.split('	').map(p => cleanStr(p)).filter(Boolean);
+                let parts = line.split('\t').map(p => cleanStr(p)).filter(Boolean);
                 if (parts.length < 2) parts = line.split(/[ ,;]+/).map(p => cleanStr(p)).filter(Boolean);
                 if (parts.length >= 2) map.set(parts[0], parts[parts.length - 1]);
                 else if(parts.length === 1) map.set(parts[0], "");
@@ -915,21 +912,11 @@
 
         function applyFilters() {
             const g = globalSearch.value.trim().toLowerCase();
-            // Memecah input teks menjadi array berdasarkan spasi
-            const searchTerms = g ? g.split(/\s+/) : []; 
-            
             const fromD = fromDate.value ? new Date(fromDate.value) : null;
             const toD = toDate.value ? new Date(toDate.value) : null;
             
             filtered = rawData.filter(row => {
-                // Pengecekan multi-keyword (semua kata harus ada di baris ini)
-                if (searchTerms.length > 0) {
-                    const rowString = JSON.stringify(row).toLowerCase();
-                    const matchAll = searchTerms.every(term => rowString.includes(term));
-                    if (!matchAll) return false;
-                }
-                
-                // Pengecekan tanggal
+                if (g && !JSON.stringify(row).toLowerCase().includes(g)) return false;
                 if (fromD || toD) {
                     const tVal = safeGet(row, 'Tanggal Daftar') || safeGet(row, 'Tanggal_Daftar') || safeGet(row, 'TANGGAL DAFTAR') || safeGet(row, 'Tanggal') || '';
                     const dt = parseDateLoose(tVal);
@@ -937,7 +924,6 @@
                 }
                 return true;
             });
-            
             currentPage = 1; 
             if(document.getElementById('menu-validasi').classList.contains('active') || document.getElementById('menu-duplikat').classList.contains('active')) {
                 switchMenu('menu-master');
