@@ -1,754 +1,1021 @@
 <!doctype html>
 <html lang="id">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Data Viewer — Summary MLS</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Logistics Data Validator Dashboard</title>
 
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    .table-fixed thead th { position: sticky; top: 0; background: white; z-index: 10; }
-    .small { font-size: 0.85rem; }
-    .chip { background:#eef2ff; color:#3730a3; padding:4px 8px; border-radius:999px; font-weight:600; }
-    pre.json-preview { max-height: 260px; overflow:auto; background:#0b1220; color:#e6eef8; padding:12px; border-radius:8px; }
-    .muted { color:#6b7280; }
-    pre.mismatch { max-height: 220px; overflow:auto; background:#111827; color:#e5e7eb; padding:10px; border-radius:8px; }
-  </style>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+    <style>
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .table-container { height: calc(100vh - 180px); overflow: auto; }
+        .table-fixed thead th { position: sticky; top: 0; background: #f8fafc; z-index: 10; box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); }
+        
+        button { transition: all 0.15s ease-in-out; }
+        button:active { transform: scale(0.97); }
+
+        .menu-item.active { background-color: #eff6ff; color: #4f46e5; border-right: 3px solid #4f46e5; font-weight: 700; }
+        .menu-item.active svg { color: #4f46e5; }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        .mismatch-box { max-height: 250px; overflow-y: auto; padding: 16px; border-radius: 8px; }
+    </style>
 </head>
-<body class="bg-slate-50 min-h-screen p-6">
-  <div class="max-w-7xl mx-auto">
-    <header class="mb-6">
-      <h1 class="text-2xl font-semibold text-slate-800">Summary MLS Viewer</h1>
-      <p class="text-sm text-slate-500 mt-1">Mencoba memuat <strong>Summary MLS.json</strong> dari folder yang sama. Jika gagal, pilih file secara manual.</p>
-    </header>
+<body class="bg-slate-50 min-h-screen text-slate-800 font-sans selection:bg-indigo-200 overflow-hidden flex">
+    
+    <div id="toast-container" class="fixed bottom-6 right-6 z-50 flex flex-col gap-3"></div>
 
-    <main class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-      <!-- Sidebar Controls -->
-      <section class="lg:col-span-1 bg-white p-4 rounded-lg shadow-sm">
-        <div class="mb-3">
-          <div class="text-sm font-medium text-slate-700">Status Load</div>
-          <div id="loadStatus" class="text-sm muted mt-1">Mencoba memuat Summary MLS.json …</div>
+    <aside class="w-72 bg-white border-r border-slate-200 flex flex-col h-screen shrink-0 relative z-20 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
+        <div class="h-16 flex items-center px-6 border-b border-slate-100">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-indigo-600 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1-1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0" /></svg>
+            <h1 class="text-lg font-bold text-slate-800">Logistics<span class="text-indigo-600">Dash</span></h1>
         </div>
 
-        <label class="block text-sm font-medium text-slate-700 mb-2">Jika fetch gagal, pilih file</label>
-        <input id="fileInput" type="file" accept=".json" class="block w-full text-sm mb-2" />
-        <div class="flex gap-2 mb-3">
-          <button id="btnLoadFile" class="flex-1 px-3 py-2 bg-sky-600 text-white rounded-md">Load from file</button>
-          <button id="btnReload" class="px-3 py-2 bg-slate-200 rounded-md">Reload fetch</button>
-        </div>
-
-        <hr class="my-4" />
-
-        <div class="space-y-3">
-          <div>
-            <label class="text-sm font-medium text-slate-700">Pencarian Global</label>
-            <input id="globalSearch" class="w-full mt-1 p-2 border rounded-md text-sm" placeholder="Cari No Polisi, Sopir, SJ, dll" />
-          </div>
-
-          <!-- ✅ NEW: Multi FO Filter -->
-          <div>
-            <label class="text-sm font-medium text-slate-700">
-              Filter Multi No FO <span class="text-xs text-slate-400">(auto filter)</span>
-            </label>
-            <textarea id="multiFO" rows="4"
-              class="w-full mt-1 p-2 border rounded-md text-sm"
-              placeholder="Paste banyak FO (boleh dari Excel, ada koma juga gapapa)
-contoh:
-6100191934
-6,100,194,413"></textarea>
-            <div class="flex gap-2 mt-2">
-              <button id="btnClearFO" class="px-3 py-1 bg-slate-100 rounded-md text-sm">Clear FO</button>
-              <button id="btnUsePairsFO" class="px-3 py-1 bg-indigo-50 rounded-md text-sm">Ambil FO dari Pair</button>
-            </div>
-          </div>
-
-          <!-- ✅ NEW: FO + Netto Pairs Validation -->
-          <div>
-            <label class="text-sm font-medium text-slate-700">
-              Input FO + Netto (opsional) <span class="text-xs text-slate-400">(cek mismatch)</span>
-            </label>
-            <textarea id="foNettoPairs" rows="4"
-              class="w-full mt-1 p-2 border rounded-md text-sm"
-              placeholder="Copy dari Excel 2 kolom (FO[TAB]Netto) / bisa spasi / koma
-contoh:
-6100191934    24000
-6100194413    25500"></textarea>
-
-            <div class="flex items-center justify-between mt-2">
-              <label class="flex items-center gap-2 text-sm text-slate-600">
-                <input id="chkValidateNetto" type="checkbox" class="h-4 w-4" checked />
-                Validasi Netto saat ada pair
-              </label>
-              <button id="btnClearPairs" class="px-3 py-1 bg-slate-100 rounded-md text-sm">Clear Pair</button>
-            </div>
-
-            <!-- Summary mismatch -->
-            <div class="mt-3 p-3 rounded-md border bg-slate-50">
-              <div class="text-sm font-medium text-slate-700 mb-2">Summary FO / Netto</div>
-              <div class="grid grid-cols-2 gap-2 text-xs">
-                <div class="px-2 py-1 rounded bg-white border">FO Input: <span id="sumFoInput" class="font-semibold">0</span></div>
-                <div class="px-2 py-1 rounded bg-white border">FO Found: <span id="sumFoFound" class="font-semibold">0</span></div>
-                <div class="px-2 py-1 rounded bg-white border">FO Missing: <span id="sumFoMissing" class="font-semibold text-rose-600">0</span></div>
-                <div class="px-2 py-1 rounded bg-white border">Netto Mismatch: <span id="sumNettoMismatch" class="font-semibold text-amber-700">0</span></div>
-              </div>
-
-              <div class="mt-2">
-                <button id="btnShowMismatch" class="w-full px-3 py-2 bg-rose-600 text-white rounded-md text-sm">
-                  Lihat Detail Mismatch
+        <div class="p-5 border-b border-slate-100 bg-slate-50/50">
+            <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">Data Source</label>
+            <div id="statusAlert" class="mb-3 hidden p-2.5 rounded border text-[11px] leading-tight flex flex-col gap-1"></div>
+            <input id="fileInput" type="file" accept=".json, .xlsx, .xls, .csv" class="block w-full text-[11px] text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:font-medium file:bg-white file:text-slate-700 file:border file:border-slate-300 hover:file:bg-slate-50 border border-slate-300 rounded-md mb-2 cursor-pointer bg-white transition-all" />
+            
+            <div class="flex gap-2">
+                <button id="btnLoadFile" class="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-xs font-bold shadow-sm flex justify-center items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                    Proses File
                 </button>
-                <div id="mismatchWrap" class="mt-2 hidden">
-                  <pre id="mismatchDetail" class="mismatch">Belum ada mismatch.</pre>
+                <button id="btnReloadJSON" title="Muat Ulang JSON Lokal" class="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-md text-xs font-bold shadow-sm flex justify-center items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                </button>
+            </div>
+
+            <button id="btnDownloadUpdated" class="hidden w-full mt-2 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-md text-xs font-bold shadow-sm flex justify-center items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                Download Sheet Terupdate
+            </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto py-4">
+            <div class="px-5 mb-2"><span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Menu Utama</span></div>
+            <ul class="space-y-1">
+                <li>
+                    <button onclick="switchMenu('menu-master')" id="nav-menu-master" class="menu-item active w-full flex items-center gap-3 px-6 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
+                        Data Master
+                    </button>
+                </li>
+                <li>
+                    <button onclick="switchMenu('menu-log')" id="nav-menu-log" class="menu-item w-full flex items-center justify-between px-6 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
+                        <div class="flex items-center gap-3">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                            Log Sheet Update
+                        </div>
+                        <span id="logBadge" class="hidden bg-rose-500 text-white text-[9px] px-2 py-0.5 rounded-full animate-pulse font-bold">Baru</span>
+                    </button>
+                </li>
+            </ul>
+
+            <div class="px-5 mt-6 mb-2"><span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Validasi & Checks</span></div>
+            <ul class="space-y-1">
+                <li>
+                    <button onclick="switchMenu('menu-validasi')" id="nav-menu-validasi" class="menu-item w-full flex items-center gap-3 px-6 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        Validasi Acuan Data
+                    </button>
+                </li>
+                <li>
+                    <button onclick="switchMenu('menu-duplikat')" id="nav-menu-duplikat" class="menu-item w-full flex items-center gap-3 px-6 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                        Cek Duplikat IML
+                    </button>
+                </li>
+            </ul>
+        </div>
+        
+        <div class="p-4 border-t border-slate-200 text-center bg-slate-50">
+            <p class="text-[10px] text-slate-400 font-medium">Offline Web App v2.3</p>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col h-screen overflow-hidden bg-slate-50">
+        
+        <header class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 relative z-10 shadow-[0_4px_24px_rgba(0,0,0,0.02)]">
+            <div class="flex-1 max-w-lg">
+                <div class="relative">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <svg class="h-4 w-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                    </div>
+                    <input id="globalSearch" class="w-full pl-9 p-2 bg-slate-100 border-transparent rounded-lg text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all" placeholder="Cari data apapun..." />
                 </div>
-              </div>
             </div>
-          </div>
-
-          <div>
-            <label class="text-sm font-medium text-slate-700">Filter Netto Range</label>
-            <div class="flex gap-2 mt-1">
-              <input id="minNetto" type="number" placeholder="Min" class="w-1/2 p-2 border rounded-md text-sm" />
-              <input id="maxNetto" type="number" placeholder="Max" class="w-1/2 p-2 border rounded-md text-sm" />
+            
+            <div class="flex items-center gap-3 ml-4 border-l border-slate-200 pl-4">
+                <div class="flex items-center gap-2">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Periode:</span>
+                    <input id="fromDate" type="date" class="p-1.5 border border-slate-200 rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50 hover:bg-white cursor-pointer text-slate-600" />
+                    <span class="text-xs text-slate-400">-</span>
+                    <input id="toDate" type="date" class="p-1.5 border border-slate-200 rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50 hover:bg-white cursor-pointer text-slate-600" />
+                </div>
+                <div class="flex gap-1">
+                    <button id="btnApply" class="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded text-xs font-bold shadow-sm">Filter</button>
+                    <button id="btnResetFilters" class="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-600 rounded text-xs shadow-sm transition-colors" title="Reset Filter">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                    </button>
+                </div>
             </div>
-          </div>
+        </header>
 
-          <div>
-            <label class="text-sm font-medium text-slate-700">Filter Tanggal Daftar</label>
-            <div class="flex gap-2 mt-1">
-              <input id="fromDate" type="date" class="w-1/2 p-2 border rounded-md text-sm" />
-              <input id="toDate" type="date" class="w-1/2 p-2 border rounded-md text-sm" />
+        <div class="flex-1 overflow-hidden p-6">
+            
+            <div id="menu-master" class="panel h-full flex flex-col">
+                
+                <div id="mismatchWrap" class="hidden mb-4 p-4 rounded-xl border shadow-sm transition-all">
+                    <div class="flex justify-between items-center mb-2 border-b pb-2">
+                        <h3 id="mismatchTitle" class="text-sm font-bold uppercase flex items-center gap-2">Log Hasil Pengecekan</h3>
+                        <button onclick="document.getElementById('mismatchWrap').classList.add('hidden')" class="opacity-60 hover:opacity-100 transition-opacity">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                    </div>
+                    <div id="mismatchDetail" class="mismatch-box bg-white text-slate-700 text-[13px] border shadow-inner">Belum ada temuan.</div>
+                </div>
+
+                <div class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col flex-1 overflow-hidden">
+                    <div class="p-3 border-b border-slate-200 bg-white flex flex-wrap items-center justify-between gap-4">
+                        <div class="flex items-center gap-3">
+                            <span class="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold border border-indigo-100 shadow-sm">
+                                Total: <span id="rowCount">0</span> baris
+                            </span>
+                            
+                            <button id="btnClearTableFilter" class="hidden px-3 py-1 bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all shadow-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                                Hapus Filter Pengecekan
+                            </button>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <div class="relative">
+                                <button id="btnToggleCols" class="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded text-xs font-medium hover:bg-slate-50 flex items-center gap-1 shadow-sm">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" /></svg>
+                                    Tampilkan Kolom
+                                </button>
+                                <div id="dropdownCols" class="absolute right-0 mt-2 w-56 bg-white border border-slate-200 rounded-lg shadow-xl hidden z-50 p-3 max-h-64 overflow-y-auto">
+                                    <div id="colsToggle" class="flex flex-col gap-1.5"></div>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] font-bold text-slate-400 uppercase">Baris/Page:</span>
+                                <select id="perPage" class="p-1.5 border border-slate-300 rounded text-xs outline-none bg-white focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-sm">
+                                    <option value="25">25</option><option value="50" selected>50</option><option value="100">100</option><option value="500">500</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="table-container flex-1 bg-white relative">
+                        <table id="dataTable" class="min-w-full table-fixed border-collapse whitespace-nowrap text-sm">
+                            <thead class="bg-slate-50 border-b border-slate-200"><tr id="tableHead"></tr></thead>
+                            <tbody id="tableBody" class="divide-y divide-slate-100"><tr><td colspan="100%" class="text-center py-16 text-slate-400">Silakan upload atau load data source di sidebar kiri.</td></tr></tbody>
+                        </table>
+                    </div>
+
+                    <div class="p-3 border-t border-slate-200 bg-white flex items-center justify-between shrink-0">
+                        <div class="text-xs text-slate-500 font-medium">Menampilkan <span id="showing" class="text-slate-800 font-bold">0 - 0</span></div>
+                        <div class="flex items-center gap-1">
+                            <button id="prevPage" class="px-3 py-1.5 bg-white border border-slate-200 rounded text-xs font-medium text-slate-600 hover:bg-slate-50 flex items-center shadow-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+                            </button>
+                            <div id="pageInfo" class="px-4 py-1.5 bg-slate-50 border border-slate-200 rounded text-xs font-bold text-slate-700">1 / 1</div>
+                            <button id="nextPage" class="px-3 py-1.5 bg-white border border-slate-200 rounded text-xs font-medium text-slate-600 hover:bg-slate-50 flex items-center shadow-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
-          </div>
 
-          <div>
-            <label class="text-sm font-medium text-slate-700">Filter Kolom Spesifik</label>
-            <select id="colFilterSelect" class="w-full mt-1 p-2 border rounded-md text-sm">
-              <option value="">Pilih kolom untuk filter</option>
-            </select>
-            <input id="colFilterValue" placeholder="Nilai filter (contains)" class="w-full mt-2 p-2 border rounded-md text-sm" />
-          </div>
+            <div id="menu-log" class="panel hidden h-full flex flex-col">
+                <div class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col h-full overflow-hidden">
+                    <div class="p-6 border-b border-slate-200 bg-white flex items-center justify-between shrink-0">
+                        <div>
+                            <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                                Log Penggabungan Sheet 2
+                            </h2>
+                            <p class="text-xs text-slate-500 mt-1">Daftar riwayat data yang masuk sebagai baris baru, ditimpa, atau dihiraukan.</p>
+                        </div>
+                        <div class="text-xs font-mono bg-slate-50 px-4 py-2 rounded-lg text-slate-600 border border-slate-200">
+                            Total Diproses: <span id="logTotalCount" class="font-bold text-indigo-600 text-sm">0</span> baris
+                        </div>
+                    </div>
 
-          <div>
-            <label class="text-sm font-medium text-slate-700">Kolom yang Ditampilkan</label>
-            <div id="colsToggle" class="mt-2 grid grid-cols-2 gap-2 text-sm"></div>
-          </div>
+                    <div class="table-container flex-1 bg-slate-50/50 relative">
+                        <table class="min-w-full table-fixed border-collapse whitespace-nowrap text-sm">
+                            <thead class="bg-slate-100 border-b border-slate-200">
+                                <tr>
+                                    <th class="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase w-32">Status</th>
+                                    <th class="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase w-48">Key (IML / FO)</th>
+                                    <th class="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase">Keterangan Nasib Data</th>
+                                </tr>
+                            </thead>
+                            <tbody id="previewTableBody" class="divide-y divide-slate-100 bg-white">
+                                <tr><td colspan="3" class="text-center py-16 text-slate-400">Belum ada file 2 sheet yang di-upload.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
 
-          <div class="flex gap-2">
-            <button id="btnApply" class="flex-1 px-3 py-2 bg-emerald-600 text-white rounded-md">Apply Filters</button>
-            <button id="btnResetFilters" class="px-3 py-2 bg-yellow-100 rounded-md">Reset</button>
-          </div>
+            <div id="menu-validasi" class="panel hidden h-full overflow-y-auto">
+                <div class="max-w-3xl mx-auto bg-white rounded-xl border border-slate-200 shadow-sm p-8">
+                    <h2 class="text-xl font-bold text-slate-800 mb-2 flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        Validasi Acuan Data
+                    </h2>
+                    <p class="text-sm text-slate-500 mb-8">Bandingkan Data Master dengan referensi (sistem/Excel lain) untuk mencari selisih data.</p>
 
-          <div class="mt-2">
-            <button id="btnDownload" class="w-full px-3 py-2 bg-indigo-600 text-white rounded-md">Download Filtered JSON</button>
-          </div>
+                    <div class="space-y-6">
+                        <div class="bg-indigo-50/50 p-5 rounded-xl border border-indigo-100">
+                            <h3 class="text-[11px] font-bold text-indigo-800 uppercase tracking-wider mb-4">1. Setup Kolom Data Master</h3>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="text-xs font-bold text-slate-600 block mb-1.5">Kolom Acuan (Key)</label>
+                                    <select id="pairKeyCol" class="w-full p-2.5 border border-slate-200 rounded-lg text-sm bg-white shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none"></select>
+                                </div>
+                                <div>
+                                    <label class="text-xs font-bold text-slate-600 block mb-1.5">Kolom Value (Compare)</label>
+                                    <select id="pairValCol" class="w-full p-2.5 border border-slate-200 rounded-lg text-sm bg-white shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none"></select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 class="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">2. Masukkan Data Referensi Pembanding</h3>
+                            <div class="bg-slate-50 p-5 border border-slate-200 rounded-xl mb-4">
+                                <label class="text-xs font-bold text-slate-700 block mb-2">A. Ambil dari File Excel (.xlsx)</label>
+                                <input id="refFileInput" type="file" accept=".xlsx, .xls, .csv" class="block w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-white file:border file:border-slate-300 hover:file:bg-slate-100 cursor-pointer bg-white" />
+                                
+                                <div id="refMappingWrap" class="hidden mt-4 pt-4 border-t border-slate-200">
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="text-[10px] font-bold text-slate-500 uppercase">Extract Key Dari Kolom</label>
+                                            <select id="refKeyCol" class="w-full mt-1.5 p-2 border border-slate-300 rounded text-xs bg-white shadow-sm"></select>
+                                        </div>
+                                        <div>
+                                            <label class="text-[10px] font-bold text-slate-500 uppercase">Extract Value Dari Kolom</label>
+                                            <select id="refValCol" class="w-full mt-1.5 p-2 border border-slate-300 rounded text-xs bg-white shadow-sm"><option value="">-- Hanya Cek Key --</option></select>
+                                        </div>
+                                    </div>
+                                    <button id="btnExtractRef" class="w-full mt-4 px-4 py-2.5 bg-slate-800 text-white rounded-lg text-sm font-bold hover:bg-slate-900 shadow-sm transition-all">Ekstrak Data ke Boks Teks</button>
+                                </div>
+                            </div>
+
+                            <label class="text-xs font-bold text-slate-700 block mb-2">B. Atau Paste Langsung (Key [TAB] Value)</label>
+                            <textarea id="pairInput" rows="6" class="w-full p-4 border border-slate-300 rounded-xl text-sm font-mono focus:ring-2 focus:ring-indigo-500 outline-none shadow-inner" placeholder="Contoh:&#10;44080000    18500&#10;44080001    20100"></textarea>
+                            
+                            <div class="flex items-center justify-between mt-3">
+                                <label class="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
+                                    <input id="chkValidateValue" type="checkbox" class="h-4 w-4 text-indigo-600 rounded border-slate-300" checked /> Cek Selisih Angka (Mismatch Value)
+                                </label>
+                                <button id="btnClearPairs" class="px-4 py-1.5 bg-white hover:bg-slate-100 text-slate-600 rounded-lg text-xs font-bold border border-slate-300 shadow-sm">Kosongkan Text</button>
+                            </div>
+                        </div>
+
+                        <div class="pt-6 mt-2 border-t border-slate-100">
+                            <button id="btnRunValidation" class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md text-base transition-all transform hover:-translate-y-0.5">
+                                Jalankan Proses Validasi
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="menu-duplikat" class="panel hidden h-full overflow-y-auto">
+                <div class="max-w-2xl mx-auto bg-white rounded-xl border border-slate-200 shadow-sm p-10 text-center mt-12">
+                    <div class="w-20 h-20 bg-amber-50 border border-amber-100 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                    </div>
+                    <h2 class="text-2xl font-bold text-slate-800 mb-3">Pencarian Duplikat Ekstrem</h2>
+                    <p class="text-slate-500 mb-10 max-w-md mx-auto leading-relaxed text-sm">
+                        Sistem akan memindai seluruh Data Master untuk mencari baris dengan <b>Nomor IML / FO yang dobel</b>, khusus di mana salah satu barisnya <b>belum memiliki Timbang 2 / Netto</b> (Menggantung).
+                    </p>
+                    
+                    <button id="btnCheckDuplicateIML" class="px-8 py-3.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl shadow-md text-base transition-all transform hover:-translate-y-0.5">
+                        Mulai Pindai Duplikat
+                    </button>
+                </div>
+            </div>
+
         </div>
-      </section>
-
-      <!-- Table and preview -->
-      <section class="lg:col-span-3">
-        <div class="bg-white p-4 rounded-lg shadow-sm mb-4">
-          <div class="flex items-center justify-between mb-3">
-            <div class="flex items-center gap-3">
-              <span class="chip">Rows: <span id="rowCount" class="ml-2 font-normal">0</span></span>
-              <div class="small text-slate-500">Sort by</div>
-              <select id="sortSelect" class="p-1 border rounded-md text-sm">
-                <option value="">-- none --</option>
-              </select>
-              <select id="sortDir" class="p-1 border rounded-md text-sm">
-                <option value="asc">Asc</option>
-                <option value="desc">Desc</option>
-              </select>
-            </div>
-
-            <div class="flex items-center gap-2">
-              <div class="small text-slate-500">Per halaman</div>
-              <select id="perPage" class="p-1 border rounded-md text-sm">
-                <option>10</option><option>25</option><option>50</option><option>100</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="overflow-x-auto">
-            <table id="dataTable" class="min-w-full table-fixed border-collapse">
-              <thead class="bg-slate-50">
-                <tr id="tableHead"></tr>
-              </thead>
-              <tbody id="tableBody"></tbody>
-            </table>
-          </div>
-
-          <div class="mt-3 flex items-center justify-between">
-            <div class="text-sm text-slate-500">Menampilkan <span id="showing"></span></div>
-            <div class="flex items-center gap-2">
-              <button id="prevPage" class="px-3 py-1 bg-slate-100 rounded-md">Prev</button>
-              <div id="pageInfo" class="text-sm"></div>
-              <button id="nextPage" class="px-3 py-1 bg-slate-100 rounded-md">Next</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="bg-white p-4 rounded-lg shadow-sm">
-          <div class="flex items-center justify-between mb-2">
-            <h3 class="text-sm font-medium text-slate-700">Preview JSON</h3>
-            <div class="text-xs text-slate-400">Bagian awal data</div>
-          </div>
-          <pre id="jsonPreview" class="json-preview">Belum ada data.</pre>
-        </div>
-      </section>
     </main>
 
-    <footer class="mt-6 text-xs text-slate-500 text-center">
-      Runs locally. Data tidak dikirim ke server.
-    </footer>
-  </div>
+    <script>
+        let rawData = [];
+        let filtered = [];
+        let visibleCols = [];
+        let currentPage = 1;
+        let perPage = 50; 
+        let refFileData = [];
+        
+        let sheet1NameSaved = "Sheet1";
+        let sheet2NameSaved = "Sheet2";
+        let sheet2HeadersSaved = [];
+        let hasMergedData = false;
 
-  <script>
-    // =========================
-    // State
-    // =========================
-    let rawData = [];
-    let filtered = [];
-    let visibleCols = [];
-    let currentPage = 1;
-    let perPage = 10;
+        // Custom Toast Notification System
+        function showToast(title, message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            let bgClass = "bg-white border-slate-200";
+            let iconHtml = `<svg class="w-6 h-6 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
+            
+            if (type === 'success') {
+                iconHtml = `<svg class="w-6 h-6 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
+            } else if (type === 'error') {
+                iconHtml = `<svg class="w-6 h-6 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
+            }
 
-    // =========================
-    // Elements
-    // =========================
-    const loadStatus = document.getElementById('loadStatus');
-    const fileInput = document.getElementById('fileInput');
-    const btnLoadFile = document.getElementById('btnLoadFile');
-    const btnReload = document.getElementById('btnReload');
-    const globalSearch = document.getElementById('globalSearch');
-    const minNetto = document.getElementById('minNetto');
-    const maxNetto = document.getElementById('maxNetto');
-    const fromDate = document.getElementById('fromDate');
-    const toDate = document.getElementById('toDate');
-    const colFilterSelect = document.getElementById('colFilterSelect');
-    const colFilterValue = document.getElementById('colFilterValue');
-    const btnApply = document.getElementById('btnApply');
-    const btnResetFilters = document.getElementById('btnResetFilters');
-    const btnDownload = document.getElementById('btnDownload');
-    const colsToggle = document.getElementById('colsToggle');
-    const tableHead = document.getElementById('tableHead');
-    const tableBody = document.getElementById('tableBody');
-    const rowCount = document.getElementById('rowCount');
-    const jsonPreview = document.getElementById('jsonPreview');
-    const perPageEl = document.getElementById('perPage');
-    const prevPage = document.getElementById('prevPage');
-    const nextPage = document.getElementById('nextPage');
-    const pageInfo = document.getElementById('pageInfo');
-    const showing = document.getElementById('showing');
-    const sortSelect = document.getElementById('sortSelect');
-    const sortDirEl = document.getElementById('sortDir');
-
-    // NEW
-    const multiFOEl = document.getElementById('multiFO');
-    const btnClearFO = document.getElementById('btnClearFO');
-    const foNettoPairsEl = document.getElementById('foNettoPairs');
-    const chkValidateNetto = document.getElementById('chkValidateNetto');
-    const btnClearPairs = document.getElementById('btnClearPairs');
-    const btnUsePairsFO = document.getElementById('btnUsePairsFO');
-
-    const sumFoInput = document.getElementById('sumFoInput');
-    const sumFoFound = document.getElementById('sumFoFound');
-    const sumFoMissing = document.getElementById('sumFoMissing');
-    const sumNettoMismatch = document.getElementById('sumNettoMismatch');
-    const btnShowMismatch = document.getElementById('btnShowMismatch');
-    const mismatchWrap = document.getElementById('mismatchWrap');
-    const mismatchDetail = document.getElementById('mismatchDetail');
-
-    // =========================
-    // Utilities
-    // =========================
-    function safeGet(obj, key) {
-      return obj && Object.prototype.hasOwnProperty.call(obj, key) ? obj[key] : '';
-    }
-
-    // hilangkan koma/spasi, biar FO/IML/Netto konsisten
-    function cleanNumStr(v) {
-      if (v === null || v === undefined) return '';
-      return String(v).replace(/,/g, '').replace(/\s+/g, '').trim();
-    }
-
-    function toNumberLoose(v) {
-      const s = cleanNumStr(v);
-      if (!s) return NaN;
-      const n = Number(s);
-      return Number.isFinite(n) ? n : NaN;
-    }
-
-    function isNoCommaColumn(colName) {
-      const c = String(colName || '').toLowerCase();
-      // ✅ FO & No IML jangan koma-koma
-      return (c === 'fo') || c.includes('no iml') || (c === 'noiml') || (c.includes('iml'));
-    }
-
-    function detectColumns(data) {
-      const cols = new Set();
-      data.forEach(r => Object.keys(r).forEach(k => cols.add(k)));
-      return Array.from(cols);
-    }
-
-    function renderColsToggle(cols) {
-      colsToggle.innerHTML = '';
-      colFilterSelect.innerHTML = '<option value="">Pilih kolom untuk filter</option>';
-      sortSelect.innerHTML = '<option value="">-- none --</option>';
-
-      cols.forEach(c => {
-        const id = 'col_' + c.replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_]/g,'');
-
-        const wrapper = document.createElement('label');
-        wrapper.className = 'flex items-center gap-2';
-        wrapper.innerHTML = `<input type="checkbox" id="${id}" checked class="h-4 w-4"> <span class="text-sm">${c}</span>`;
-        colsToggle.appendChild(wrapper);
-
-        document.getElementById(id).addEventListener('change', () => {
-          visibleCols = cols.filter(col => document.getElementById('col_' + col.replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_]/g,'')).checked);
-          renderTable();
-        });
-
-        const opt = document.createElement('option');
-        opt.value = c;
-        opt.textContent = c;
-        colFilterSelect.appendChild(opt);
-
-        const sopt = document.createElement('option');
-        sopt.value = c;
-        sopt.textContent = c;
-        sortSelect.appendChild(sopt);
-      });
-
-      visibleCols = cols.slice(0, 8);
-      cols.forEach(c => {
-        const el = document.getElementById('col_' + c.replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_]/g,''));
-        if (el) el.checked = visibleCols.includes(c);
-      });
-    }
-
-    // =========================
-    // Multi FO parsing
-    // =========================
-    function parseFOList(text) {
-      // split by newline/space/tab; bersihin koma
-      return (text || '')
-        .split(/\s+/)
-        .map(x => cleanNumStr(x))
-        .filter(x => x.length > 0);
-    }
-
-    // Parse pasangan FO + Netto (copy dari Excel)
-    // Format fleksibel:
-    // 6100191934<TAB>24000
-    // 6100191934 24000
-    // 6,100,191,934, 24,000
-    function parseFONettoPairs(text) {
-      const lines = (text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-      const map = new Map(); // fo -> expectedNettoNumber
-      const badLines = [];
-
-      for (const line of lines) {
-        // pecah berdasarkan tab dulu, kalau ga ada pakai spasi atau koma+spasi
-        let parts = line.split('\t').map(p => p.trim()).filter(Boolean);
-
-        if (parts.length < 2) {
-          parts = line.split(/[ ,;]+/).map(p => p.trim()).filter(Boolean);
-        }
-
-        if (parts.length < 2) {
-          badLines.push(line);
-          continue;
-        }
-
-        const fo = cleanNumStr(parts[0]);
-        const netto = toNumberLoose(parts[parts.length - 1]); // ambil token terakhir sbg netto
-
-        if (!fo || Number.isNaN(netto)) {
-          badLines.push(line);
-          continue;
-        }
-
-        map.set(fo, netto);
-      }
-
-      return { map, badLines };
-    }
-
-    // =========================
-    // Validation FO/Netto summary
-    // =========================
-    function buildIndexByFO(data) {
-      // fo -> array rows
-      const idx = new Map();
-      data.forEach(row => {
-        const foRaw = safeGet(row, 'FO');
-        const fo = cleanNumStr(foRaw);
-        if (!fo) return;
-        if (!idx.has(fo)) idx.set(fo, []);
-        idx.get(fo).push(row);
-      });
-      return idx;
-    }
-
-    function uniq(arr) {
-      return Array.from(new Set(arr));
-    }
-
-    function validateFoNetto(foList, pairMap) {
-      const idx = buildIndexByFO(rawData);
-
-      let found = 0;
-      const missing = [];
-      const nettoMismatch = [];
-      const nettoOk = [];
-
-      for (const fo of foList) {
-        const rows = idx.get(fo);
-        if (!rows || rows.length === 0) {
-          missing.push(fo);
-          continue;
-        }
-        found++;
-
-        // kalau ada expected netto, cek match
-        if (pairMap && pairMap.has(fo) && chkValidateNetto.checked) {
-          const expected = pairMap.get(fo);
-          const actuals = rows.map(r => toNumberLoose(safeGet(r, 'Netto'))).filter(n => !Number.isNaN(n));
-          const actualUniq = uniq(actuals);
-
-          const ok = actualUniq.some(n => n === expected);
-          if (!ok) {
-            nettoMismatch.push({
-              fo,
-              expected,
-              actual: actualUniq.length ? actualUniq.join(', ') : '(Netto kosong/tidak valid di data)'
+            toast.className = `p-4 rounded-xl shadow-lg border transition-all duration-300 transform translate-y-10 opacity-0 flex items-start gap-3 w-80 ${bgClass}`;
+            toast.innerHTML = `
+                <div class="shrink-0 mt-0.5">${iconHtml}</div>
+                <div class="flex-1">
+                    <h4 class="text-sm font-bold text-slate-800 leading-tight">${title}</h4>
+                    <p class="text-xs text-slate-500 mt-1 leading-relaxed">${message}</p>
+                </div>
+                <button class="shrink-0 text-slate-400 hover:text-slate-600 transition-colors" onclick="this.parentElement.remove()">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            `;
+            
+            container.appendChild(toast);
+            
+            // Trigger animation in
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-10', 'opacity-0');
             });
-          } else {
-            nettoOk.push(fo);
-          }
-        }
-      }
 
-      // update UI summary
-      sumFoInput.textContent = foList.length;
-      sumFoFound.textContent = found;
-      sumFoMissing.textContent = missing.length;
-      sumNettoMismatch.textContent = nettoMismatch.length;
-
-      // detail mismatch text
-      const lines = [];
-      const pairsPresent = pairMap && pairMap.size > 0;
-
-      if (missing.length) {
-        lines.push('=== FO TIDAK DITEMUKAN DI DATA ===');
-        missing.slice(0, 200).forEach(x => lines.push('- ' + x));
-        if (missing.length > 200) lines.push(`... (${missing.length - 200} lagi)`);
-        lines.push('');
-      }
-
-      if (pairsPresent) {
-        if (nettoMismatch.length) {
-          lines.push('=== NETTO TIDAK SESUAI (FO ketemu tapi Netto beda) ===');
-          nettoMismatch.slice(0, 200).forEach(x => {
-            lines.push(`- FO ${x.fo} | Expected Netto: ${x.expected} | Actual Netto di data: ${x.actual}`);
-          });
-          if (nettoMismatch.length > 200) lines.push(`... (${nettoMismatch.length - 200} lagi)`);
-          lines.push('');
-        } else {
-          lines.push('=== NETTO SESUAI ===');
-          lines.push('Semua FO yang diinput (yang punya expected netto) sesuai dengan data.');
-          lines.push('');
-        }
-      } else {
-        lines.push('Info: Pair FO+Netto belum diisi / kosong. Validasi Netto tidak dijalankan.');
-      }
-
-      mismatchDetail.textContent = lines.join('\n');
-    }
-
-    // =========================
-    // Filters
-    // =========================
-    function applyFilters() {
-      const g = globalSearch.value.trim().toLowerCase();
-      const minN = minNetto.value ? Number(minNetto.value) : null;
-      const maxN = maxNetto.value ? Number(maxNetto.value) : null;
-      const fromD = fromDate.value ? new Date(fromDate.value) : null;
-      const toD = toDate.value ? new Date(toDate.value) : null;
-      const colFilter = colFilterSelect.value;
-      const colFilterVal = colFilterValue.value.trim().toLowerCase();
-
-      // ✅ Multi FO list
-      const foListFromBox = parseFOList(multiFOEl.value);
-
-      // ✅ Pair FO+Netto (optional)
-      const { map: pairMap } = parseFONettoPairs(foNettoPairsEl.value);
-
-      // effective FO list:
-      // - kalau multiFO ada, pakai itu
-      // - kalau multiFO kosong tapi pairs ada, pakai FO dari pairs
-      const effectiveFO = foListFromBox.length ? foListFromBox : Array.from(pairMap.keys());
-
-      // buat Set biar cepat
-      const foSet = new Set(effectiveFO);
-
-      filtered = rawData.filter(row => {
-        // filter FO (kalau ada input)
-        if (foSet.size > 0) {
-          const foVal = cleanNumStr(safeGet(row, 'FO'));
-          if (!foSet.has(foVal)) return false;
+            // Auto dismiss
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-x-10');
+                setTimeout(() => toast.remove(), 300);
+            }, 6000);
         }
 
-        // global search
-        if (g) {
-          const s = JSON.stringify(row).toLowerCase();
-          if (!s.includes(g)) return false;
+        // UI Routing
+        function switchMenu(menuId) {
+            document.querySelectorAll('.panel').forEach(el => {
+                el.classList.remove('active');
+                el.classList.add('hidden');
+            });
+            const target = document.getElementById(menuId);
+            target.classList.remove('hidden');
+            setTimeout(() => target.classList.add('active'), 10);
+
+            document.querySelectorAll('.menu-item').forEach(el => el.classList.remove('active'));
+            document.getElementById(`nav-${menuId}`).classList.add('active');
+
+            if(menuId === 'menu-log') document.getElementById('logBadge').classList.add('hidden');
+            if(menuId === 'menu-master') renderTable();
         }
 
-        // Netto range
-        const netto = toNumberLoose(safeGet(row, 'Netto'));
-        if (!Number.isNaN(netto)) {
-          if (minN !== null && netto < minN) return false;
-          if (maxN !== null && netto > maxN) return false;
-        } else {
-          if (minN !== null || maxN !== null) return false;
+        const STORAGE_KEY = 'arya_logistics_prefs';
+        function savePrefs() {
+            const prefs = {
+                visibleCols: visibleCols,
+                pairKey: document.getElementById('pairKeyCol').value,
+                pairVal: document.getElementById('pairValCol').value,
+                perPage: document.getElementById('perPage').value
+            };
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
         }
 
-        // date range
-        const t = safeGet(row, 'Tanggal Daftar') || safeGet(row, 'Tanggal') || '';
-        if (t && (fromD || toD)) {
-          const dt = new Date(t);
-          if (fromD && dt < fromD) return false;
-          if (toD && dt > new Date(toD.getTime() + 24*60*60*1000 - 1)) return false;
-        } else if ((fromD || toD) && !t) {
-          return false;
+        function loadPrefs() {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            return saved ? JSON.parse(saved) : null;
         }
 
-        // specific column filter
-        if (colFilter && colFilterVal) {
-          const val = String(safeGet(row, colFilter) ?? '').toLowerCase();
-          if (!val.includes(colFilterVal)) return false;
+        // DOM Elements
+        const statusAlert = document.getElementById('statusAlert');
+        const fileInput = document.getElementById('fileInput');
+        const btnLoadFile = document.getElementById('btnLoadFile');
+        const btnReloadJSON = document.getElementById('btnReloadJSON');
+        const btnDownloadUpdated = document.getElementById('btnDownloadUpdated');
+        const globalSearch = document.getElementById('globalSearch');
+        const btnApply = document.getElementById('btnApply');
+        const btnResetFilters = document.getElementById('btnResetFilters');
+        const btnClearTableFilter = document.getElementById('btnClearTableFilter');
+        
+        const pairKeyCol = document.getElementById('pairKeyCol');
+        const pairValCol = document.getElementById('pairValCol');
+        const fromDate = document.getElementById('fromDate');
+        const toDate = document.getElementById('toDate');
+        const refFileInput = document.getElementById('refFileInput');
+        const refMappingWrap = document.getElementById('refMappingWrap');
+        const refKeyCol = document.getElementById('refKeyCol');
+        const refValCol = document.getElementById('refValCol');
+        const btnExtractRef = document.getElementById('btnExtractRef');
+        const pairInputEl = document.getElementById('pairInput');
+        const chkValidateValue = document.getElementById('chkValidateValue');
+        const btnClearPairs = document.getElementById('btnClearPairs');
+        
+        const btnRunValidation = document.getElementById('btnRunValidation');
+        const btnCheckDuplicateIML = document.getElementById('btnCheckDuplicateIML');
+        
+        const mismatchWrap = document.getElementById('mismatchWrap');
+        const mismatchDetail = document.getElementById('mismatchDetail');
+        const mismatchTitle = document.getElementById('mismatchTitle');
+        
+        const colsToggle = document.getElementById('colsToggle');
+        const tableHead = document.getElementById('tableHead');
+        const tableBody = document.getElementById('tableBody');
+        const rowCount = document.getElementById('rowCount');
+        const perPageEl = document.getElementById('perPage');
+        const prevPage = document.getElementById('prevPage');
+        const nextPage = document.getElementById('nextPage');
+        const pageInfo = document.getElementById('pageInfo');
+        const showing = document.getElementById('showing');
+        const previewTableBody = document.getElementById('previewTableBody');
+        const logTotalCount = document.getElementById('logTotalCount');
+        const logBadge = document.getElementById('logBadge');
+
+        function setStatus(msg, type = 'info') {
+            statusAlert.classList.remove('hidden', 'bg-indigo-50', 'text-indigo-700', 'bg-emerald-50', 'text-emerald-700', 'bg-rose-50', 'text-rose-700', 'border-indigo-200', 'border-emerald-200', 'border-rose-200');
+            if(type === 'loading' || type === 'info') statusAlert.classList.add('bg-indigo-50', 'text-indigo-700', 'border-indigo-200');
+            else if(type === 'success') statusAlert.classList.add('bg-emerald-50', 'text-emerald-700', 'border-emerald-200');
+            else if(type === 'error') statusAlert.classList.add('bg-rose-50', 'text-rose-700', 'border-rose-200');
+            statusAlert.innerHTML = `<span>${msg}</span>`;
         }
 
-        return true;
-      });
+        function safeGet(obj, key) { return obj && Object.prototype.hasOwnProperty.call(obj, key) ? obj[key] : ''; }
+        function cleanStr(v) { return v === null || v === undefined ? '' : String(v).trim(); }
+        
+        function isMatch(val1, val2) {
+            if(val1 == val2) return true;
+            const str1 = String(val1).trim().toLowerCase();
+            const str2 = String(val2).trim().toLowerCase();
+            if(str1 === str2) return true;
+            const n1 = Number(str1.replace(/,/g, '').replace(/\./g, ''));
+            const n2 = Number(str2.replace(/,/g, '').replace(/\./g, ''));
+            if(!Number.isNaN(n1) && !Number.isNaN(n2) && n1 === n2) return true;
+            return false;
+        }
 
-      // sort
-      const sortBy = sortSelect.value;
-      const sortDir = sortDirEl.value;
-      if (sortBy) {
-        filtered.sort((a,b) => {
-          const va = safeGet(a, sortBy);
-          const vb = safeGet(b, sortBy);
+        function parseDateLoose(dStr) {
+            if(!dStr) return null;
+            let dt = new Date(dStr);
+            if(!isNaN(dt.getTime())) return dt;
+            const parts = String(dStr).split(/[-/]/);
+            if(parts.length === 3) {
+                const y = parts[2].length === 2 ? "20"+parts[2] : parts[2];
+                dt = new Date(`${y}-${parts[1]}-${parts[0]}`);
+                if(!isNaN(dt.getTime())) return dt;
+            }
+            return null;
+        }
 
-          const na = toNumberLoose(va);
-          const nb = toNumberLoose(vb);
+        function detectColumns(data) {
+            const cols = new Set();
+            data.forEach(r => Object.keys(r).forEach(k => cols.add(k)));
+            return Array.from(cols);
+        }
 
-          if (!Number.isNaN(na) && !Number.isNaN(nb)) {
-            return sortDir === 'asc' ? na - nb : nb - na;
-          }
+        function renderColsToggle(cols) {
+            colsToggle.innerHTML = '';
+            pairKeyCol.innerHTML = '';
+            pairValCol.innerHTML = '';
+            const prefs = loadPrefs();
 
-          const sa = String(va).toLowerCase();
-          const sb = String(vb).toLowerCase();
-          if (sa < sb) return sortDir === 'asc' ? -1 : 1;
-          if (sa > sb) return sortDir === 'asc' ? 1 : -1;
-          return 0;
+            cols.forEach(c => {
+                const optK = new Option(c, c); pairKeyCol.add(optK);
+                const optV = new Option(c, c); pairValCol.add(optV);
+
+                const id = 'col_' + c.replace(/[^a-zA-Z0-9]/g,'');
+                const wrapper = document.createElement('label');
+                wrapper.className = 'flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-1.5 rounded';
+                wrapper.innerHTML = `<input type="checkbox" id="${id}" checked class="h-3.5 w-3.5 text-indigo-600 rounded"> <span class="text-[11px] font-bold text-slate-600">${c}</span>`;
+                colsToggle.appendChild(wrapper);
+
+                document.getElementById(id).addEventListener('change', () => {
+                    visibleCols = cols.filter(col => document.getElementById('col_' + col.replace(/[^a-zA-Z0-9]/g,'')).checked);
+                    savePrefs();
+                    if(document.getElementById('menu-master').classList.contains('active')) renderTable();
+                });
+            });
+
+            if(prefs) {
+                if(prefs.pairKey && cols.includes(prefs.pairKey)) pairKeyCol.value = prefs.pairKey;
+                if(prefs.pairVal && cols.includes(prefs.pairVal)) pairValCol.value = prefs.pairVal;
+                if(prefs.perPage) perPageEl.value = prefs.perPage;
+                visibleCols = prefs.visibleCols.filter(c => cols.includes(c));
+            } else {
+                if(cols.includes('FO')) pairKeyCol.value = 'FO';
+                else if(cols.includes('No_FO')) pairKeyCol.value = 'No_FO';
+                const valColFound = cols.find(c => c.toLowerCase().includes('netto'));
+                if(valColFound) pairValCol.value = valColFound;
+                visibleCols = cols.slice(0, 8);
+            }
+
+            cols.forEach(c => {
+                const el = document.getElementById('col_' + c.replace(/[^a-zA-Z0-9]/g,''));
+                if (el) el.checked = visibleCols.includes(c);
+            });
+        }
+
+        // =====================================
+        // LOGIC UPSERT (MERGE SHEET 1 & 2)
+        // =====================================
+        function mergeLogisticsData(sheet1, sheet2) {
+            const cols1 = detectColumns(sheet1);
+            
+            const keyCol = cols1.find(c => {
+                const low = c.toLowerCase();
+                return low === 'no iml' || low === 'nomor iml' || low === 'fo' || low === 'no_fo';
+            }) || cols1[0];
+
+            const checkCol = cols1.find(c => {
+                const low = c.toLowerCase();
+                return low.includes('timbang 2') || low.includes('netto');
+            }) || cols1[cols1.length - 1];
+
+            const mapMaster = new Map();
+            sheet1.forEach(row => {
+                const keyVal = cleanStr(safeGet(row, keyCol));
+                if (keyVal) mapMaster.set(keyVal, row);
+            });
+
+            let stats = { appended: 0, updated: 0, ignored: 0 };
+            let logs = [];
+
+            sheet2.forEach(row2 => {
+                const keyVal = cleanStr(safeGet(row2, keyCol));
+                if (!keyVal) return;
+
+                if (mapMaster.has(keyVal)) {
+                    const row1 = mapMaster.get(keyVal);
+                    const t2_Sheet1 = cleanStr(safeGet(row1, checkCol));
+                    const belumTimbang2 = (t2_Sheet1 === "" || t2_Sheet1 === "0" || t2_Sheet1 === "null" || t2_Sheet1 === "0.0");
+                    
+                    if (belumTimbang2) {
+                        mapMaster.set(keyVal, { ...row1, ...row2 });
+                        stats.updated++;
+                        logs.push({ status: 'UPDATE', iml: keyVal, color: 'bg-amber-100 text-amber-800 border-amber-200', note: 'Data ditimpa karena Master belum Timbang 2 / Netto.' });
+                    } else {
+                        stats.ignored++;
+                        logs.push({ status: 'IGNORE', iml: keyVal, color: 'bg-slate-100 text-slate-500 border-slate-200', note: `Dihiraukan. Sudah ada Netto valid (${t2_Sheet1}).` });
+                    }
+                } else {
+                    mapMaster.set(keyVal, row2);
+                    stats.appended++;
+                    logs.push({ status: 'NEW', iml: keyVal, color: 'bg-emerald-100 text-emerald-800 border-emerald-200', note: 'Data baru sukses ditambahkan.' });
+                }
+            });
+
+            return { mergedData: Array.from(mapMaster.values()), stats, logs };
+        }
+
+        // =====================================
+        // AUTO FETCH JSON
+        // =====================================
+        async function tryFetchSummary() {
+            setStatus('Mencari file JSON lokal...', 'loading');
+            try {
+                const res = await fetch('./Summary MLS.json', { cache: 'no-store' });
+                if (!res.ok) throw new Error('File tidak ditemukan');
+                
+                const j = await res.json();
+                rawData = Array.isArray(j) ? j : (j.data || []);
+                afterLoad(); 
+                
+                setStatus('Berhasil meload JSON lokal.', 'success');
+                showToast("Data Dimuat", `Berhasil memuat ${rawData.length.toLocaleString()} baris dari Summary MLS.json otomatis.`, "success");
+                switchMenu('menu-master');
+            } catch (err) { 
+                setStatus('Menunggu upload file data.', 'info'); 
+            }
+        }
+
+        window.addEventListener('load', tryFetchSummary);
+        btnReloadJSON.addEventListener('click', tryFetchSummary);
+
+
+        // Proses Load File Manual
+        btnLoadFile.addEventListener('click', () => {
+            const f = fileInput.files[0]; 
+            if (!f) {
+                showToast("Peringatan", "Harap pilih file Excel/JSON terlebih dahulu.", "error");
+                return; 
+            }
+            
+            const reader = new FileReader(); 
+            const isExcel = f.name.toLowerCase().match(/\.(xlsx|xls|csv)$/);
+            
+            setStatus('Membaca file...', 'loading');
+            btnDownloadUpdated.classList.add('hidden');
+            hasMergedData = false;
+            mismatchWrap.classList.add('hidden');
+
+            if (isExcel) {
+                reader.onload = e => {
+                    try {
+                        const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+                        sheet1NameSaved = workbook.SheetNames[0];
+                        const sheet1Data = XLSX.utils.sheet_to_json(workbook.Sheets[sheet1NameSaved], { defval: '', raw: false });
+                        
+                        if (workbook.SheetNames.length > 1) {
+                            sheet2NameSaved = workbook.SheetNames[1];
+                            const sheet2 = workbook.Sheets[sheet2NameSaved];
+                            const sheet2Data = XLSX.utils.sheet_to_json(sheet2, { defval: '', raw: false });
+                            
+                            const sheet2RawArray = XLSX.utils.sheet_to_json(sheet2, { header: 1 });
+                            if(sheet2RawArray.length > 0) sheet2HeadersSaved = sheet2RawArray[0];
+
+                            const result = mergeLogisticsData(sheet1Data, sheet2Data);
+                            rawData = result.mergedData;
+                            hasMergedData = true;
+                            
+                            setStatus(`<strong>Pembaruan Sukses!</strong><br/>Baris baru: ${result.stats.appended} | Diupdate: ${result.stats.updated}`, 'success');
+                            showToast("Penggabungan Berhasil", `Berhasil memproses Sheet 2. Tambah: ${result.stats.appended}, Update: ${result.stats.updated}`, "success");
+                            btnDownloadUpdated.classList.remove('hidden');
+
+                            previewTableBody.innerHTML = '';
+                            logTotalCount.textContent = result.logs.length;
+                            if(result.logs.length === 0) {
+                                previewTableBody.innerHTML = '<tr><td colspan="3" class="text-center py-16 text-slate-400">Tidak ada baris yang diproses di Sheet 2.</td></tr>';
+                            } else {
+                                result.logs.forEach(log => {
+                                    const tr = document.createElement('tr');
+                                    tr.className = "hover:bg-slate-50 transition-colors bg-white";
+                                    tr.innerHTML = `
+                                        <td class="px-6 py-2.5 border-slate-100"><span class="px-2 py-1 text-[10px] font-bold rounded border ${log.color}">${log.status}</span></td>
+                                        <td class="px-6 py-2.5 border-slate-100 font-mono text-[13px] font-bold text-slate-700">${log.iml}</td>
+                                        <td class="px-6 py-2.5 border-slate-100 text-xs text-slate-500">${log.note}</td>
+                                    `;
+                                    previewTableBody.appendChild(tr);
+                                });
+                            }
+                            
+                            logBadge.classList.remove('hidden');
+                            switchMenu('menu-log');
+
+                        } else {
+                            rawData = sheet1Data;
+                            setStatus('Berhasil meload Data Master (1 Sheet).', 'success');
+                            showToast("File Dimuat", "Data Master berhasil dibaca dari file Excel.", "success");
+                            switchMenu('menu-master');
+                        }
+
+                        afterLoad(); fileInput.value = ""; 
+                    } catch (err) { 
+                        setStatus('Gagal membaca Excel.', 'error'); 
+                        showToast("Error", "Gagal melakukan parse struktur Excel.", "error");
+                    }
+                }; reader.readAsArrayBuffer(f);
+            } else {
+                reader.onload = e => {
+                    try { 
+                        rawData = JSON.parse(e.target.result); 
+                        afterLoad(); 
+                        setStatus('Berhasil load JSON.', 'success'); 
+                        showToast("File Dimuat", "Data JSON berhasil dibaca.", "success");
+                        switchMenu('menu-master'); 
+                    } catch (err) { 
+                        setStatus('Gagal parse JSON.', 'error'); 
+                        showToast("Error", "Struktur JSON tidak valid.", "error");
+                    }
+                }; reader.readAsText(f);
+            }
         });
-      }
 
-      // ✅ update validation summary (bukan cuma filter)
-      const foForValidation = effectiveFO;
-      validateFoNetto(foForValidation, pairMap);
+        // Download Sheet Terupdate
+        btnDownloadUpdated.addEventListener('click', () => {
+            if(!hasMergedData || rawData.length === 0) return;
+            
+            showToast("Memproses", "Menyiapkan file download, harap tunggu...", "info");
 
-      currentPage = 1;
-      renderTable();
-    }
+            // Jeda sedikit agar toast sempat render sebelum browser hang ngerender zip
+            setTimeout(() => {
+                const newSheet1 = XLSX.utils.json_to_sheet(rawData);
+                const newSheet2Data = sheet2HeadersSaved.length > 0 ? [sheet2HeadersSaved] : [];
+                const newSheet2 = XLSX.utils.aoa_to_sheet(newSheet2Data);
 
-    function renderTable() {
-      perPage = Number(perPageEl.value);
-      const total = filtered.length;
-      rowCount.textContent = total;
+                const newWorkbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(newWorkbook, newSheet1, sheet1NameSaved);
+                XLSX.utils.book_append_sheet(newWorkbook, newSheet2, sheet2NameSaved);
 
-      const totalPages = Math.max(1, Math.ceil(total / perPage));
-      if (currentPage > totalPages) currentPage = totalPages;
-
-      const start = (currentPage - 1) * perPage;
-      const end = start + perPage;
-      const pageRows = filtered.slice(start, end);
-
-      tableHead.innerHTML = '';
-      visibleCols.forEach(c => {
-        const th = document.createElement('th');
-        th.className = 'px-3 py-2 text-left text-sm border-b';
-        th.textContent = c;
-        tableHead.appendChild(th);
-      });
-
-      tableBody.innerHTML = '';
-      pageRows.forEach(r => {
-        const tr = document.createElement('tr');
-        visibleCols.forEach(c => {
-          const td = document.createElement('td');
-          td.className = 'px-3 py-2 text-sm border-b align-top';
-
-          let v = safeGet(r, c);
-          if (v === null || v === undefined) v = '';
-
-          // ✅ FO & No IML jangan koma-koma
-          if (isNoCommaColumn(c)) {
-            td.textContent = cleanNumStr(v);
-          } else if (typeof v === 'number') {
-            td.textContent = v.toLocaleString();
-          } else {
-            // kalau string angka, tetap tampil apa adanya
-            td.textContent = v;
-          }
-
-          tr.appendChild(td);
+                const dateStr = new Date().toISOString().split('T')[0];
+                const fileName = `Data_Terupdate_${dateStr}.xlsx`;
+                
+                // PENTING: compression: true mencegah bengkak file 80MB.
+                XLSX.writeFile(newWorkbook, fileName, { compression: true });
+                showToast("Selesai", `File "${fileName}" berhasil didownload!`, "success");
+            }, 100);
         });
-        tableBody.appendChild(tr);
-      });
 
-      pageInfo.textContent = `${currentPage} / ${totalPages}`;
-      showing.textContent = `${Math.min(total, start+1)} - ${Math.min(total, end)} of ${total}`;
-      jsonPreview.textContent = JSON.stringify(filtered.slice(0, 50), null, 2);
-    }
 
-    // =========================
-    // Load JSON from relative path
-    // =========================
-    async function tryFetchSummary() {
-      loadStatus.textContent = 'Mencoba memuat Summary MLS.json dari folder yang sama…';
-      try {
-        const res = await fetch('./Summary MLS.json', { cache: 'no-store' });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const j = await res.json();
-        rawData = Array.isArray(j) ? j : (j.data || []);
-        if (!rawData.length) {
-          loadStatus.textContent = 'File ditemukan tetapi data kosong atau bukan array.';
-          return;
+        // =====================================
+        // VALIDASI ACUAN LOGIC
+        // =====================================
+        refFileInput.addEventListener('change', (e) => {
+            const f = e.target.files[0]; if (!f) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const data = new Uint8Array(event.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const j = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: '', raw: false });
+                    refFileData = Array.isArray(j) ? j : [];
+                    const cols = detectColumns(refFileData);
+                    refKeyCol.innerHTML = ''; refValCol.innerHTML = '<option value="">-- Hanya Cek Key --</option>';
+                    cols.forEach(c => { refKeyCol.add(new Option(c, c)); refValCol.add(new Option(c, c)); });
+                    if(cols.includes('FO')) refKeyCol.value = 'FO';
+                    const nettoCol = cols.find(c => c.toLowerCase().includes('netto'));
+                    if(nettoCol) refValCol.value = nettoCol;
+                    refMappingWrap.classList.remove('hidden');
+                } catch(err) { alert('Gagal baca file referensi.'); }
+            }; reader.readAsArrayBuffer(f);
+        });
+
+        btnExtractRef.addEventListener('click', () => {
+            const k = refKeyCol.value; const v = refValCol.value;
+            if(!k) return;
+            let extractedText = "";
+            refFileData.forEach(row => {
+                const keyVal = cleanStr(safeGet(row, k));
+                const valVal = v ? cleanStr(safeGet(row, v)) : "";
+                if(keyVal) extractedText += `${keyVal}	${valVal}
+`;
+            });
+            pairInputEl.value = extractedText.trim();
+            refMappingWrap.classList.add('hidden'); refFileInput.value = ""; 
+        });
+
+        function parsePairs(text) {
+            const lines = (text || '').split(/
+?
+/).map(l => l.trim()).filter(Boolean);
+            const map = new Map();
+            for (const line of lines) {
+                let parts = line.split('	').map(p => cleanStr(p)).filter(Boolean);
+                if (parts.length < 2) parts = line.split(/[ ,;]+/).map(p => cleanStr(p)).filter(Boolean);
+                if (parts.length >= 2) map.set(parts[0], parts[parts.length - 1]);
+                else if(parts.length === 1) map.set(parts[0], "");
+            }
+            return map;
         }
-        afterLoad();
-        loadStatus.textContent = 'Berhasil memuat Summary MLS.json';
-      } catch (err) {
-        loadStatus.textContent = 'Gagal fetch Summary MLS.json. Gunakan tombol Load from file atau jalankan server lokal. ' + err.message;
-      }
-    }
 
-    // Load from file input
-    btnLoadFile.addEventListener('click', () => {
-      const f = fileInput.files[0];
-      if (!f) { alert('Pilih file Summary MLS.json terlebih dahulu.'); return; }
-      const reader = new FileReader();
-      reader.onload = e => {
-        try {
-          const j = JSON.parse(e.target.result);
-          rawData = Array.isArray(j) ? j : (j.data || []);
-          if (!rawData.length) { alert('File JSON kosong atau format tidak sesuai.'); return; }
-          afterLoad();
-          loadStatus.textContent = 'Berhasil memuat dari file input.';
-        } catch (err) {
-          alert('Gagal parse JSON file: ' + err.message);
+        btnRunValidation.addEventListener('click', () => {
+            if(rawData.length === 0) { showToast("Peringatan", "Data Master masih kosong!", "error"); return; }
+            
+            const pairMap = parsePairs(pairInputEl.value);
+            const inputKeys = Array.from(pairMap.keys());
+            const keyColName = pairKeyCol.value; 
+            const valColName = pairValCol.value;
+
+            const keySet = new Set(inputKeys);
+            filtered = rawData.filter(row => keySet.has(cleanStr(safeGet(row, keyColName))));
+            
+            const idx = new Map();
+            rawData.forEach(row => {
+                const k = cleanStr(safeGet(row, keyColName));
+                if(k) { if(!idx.has(k)) idx.set(k, []); idx.get(k).push(row); }
+            });
+
+            let found = 0; const missing = []; const valMismatch = []; 
+            if (inputKeys.length === 0) { showToast("Peringatan", "Box teks data acuan kosong!", "error"); return; }
+
+            for (const key of inputKeys) {
+                const rows = idx.get(key);
+                if (!rows) { missing.push(key); continue; }
+                found++;
+                if (pairMap && pairMap.has(key) && pairMap.get(key) !== "" && chkValidateValue.checked) {
+                    const expected = pairMap.get(key);
+                    const actuals = rows.map(r => cleanStr(safeGet(r, valColName))).filter(Boolean);
+                    if (!actuals.some(n => isMatch(n, expected))) {
+                        valMismatch.push({ key, expected, actual: Array.from(new Set(actuals)).join(', ') || '(Kosong)' });
+                    }
+                }
+            }
+
+            let htmlOutput = "";
+            
+            if (missing.length) {
+                htmlOutput += `<div class="font-bold text-rose-700 mb-2 flex items-center gap-2"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> [${missing.length} DATA HILANG]</div>`;
+                htmlOutput += `<ul class="list-disc pl-6 mb-4 space-y-1">` + missing.slice(0, 50).map(x => `<li>${x}</li>`).join('');
+                if(missing.length > 50) htmlOutput += `<li>...dan ${missing.length - 50} lainnya</li>`;
+                htmlOutput += `</ul>`;
+            }
+            if (chkValidateValue.checked && valMismatch.length) {
+                htmlOutput += `<div class="font-bold text-rose-700 mb-2 flex items-center gap-2"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> [${valMismatch.length} SELISIH VALUE]</div>`;
+                htmlOutput += `<ul class="list-disc pl-6 space-y-1">` + valMismatch.slice(0, 50).map(x => `<li>Key: <b class="font-mono text-[13px]">${x.key}</b> &rarr; Ref: ${x.expected} vs Data Master: <span class="text-rose-600 font-bold">${x.actual}</span></li>`).join('');
+                if(valMismatch.length > 50) htmlOutput += `<li>...dan ${valMismatch.length - 50} lainnya</li>`;
+                htmlOutput += `</ul>`;
+            } else if (found > 0 && missing.length === 0) {
+                htmlOutput = `<div class="flex items-center gap-2 text-emerald-700 font-bold"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg> Clear. Semua data dan value sesuai dengan referensi.</div>`;
+            }
+
+            mismatchTitle.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> LOG HASIL VALIDASI`;
+            mismatchTitle.className = "text-sm font-bold text-indigo-700 uppercase flex items-center gap-2";
+            mismatchWrap.className = (missing.length > 0 || valMismatch.length > 0) ? "mb-4 bg-rose-50 p-4 rounded-xl border border-rose-200 shadow-inner block" : "mb-4 bg-emerald-50 p-4 rounded-xl border border-emerald-200 shadow-inner block";
+            mismatchDetail.className = "mismatch-box mt-2 bg-white border border-slate-200 text-slate-700 text-[13px]";
+            mismatchDetail.innerHTML = htmlOutput;
+            
+            showToast("Validasi Selesai", "Data tabel telah difilter untuk menampilkan hasil acuan.", "info");
+            switchMenu('menu-master'); 
+        });
+
+        // =====================================
+        // CEK DUPLIKAT LOGIC
+        // =====================================
+        btnCheckDuplicateIML.addEventListener('click', () => {
+            if (rawData.length === 0) { showToast("Peringatan", "Data Utama masih kosong!", "error"); return; }
+
+            const allCols = detectColumns(rawData);
+            const imlCol = allCols.find(c => {
+                const low = c.toLowerCase();
+                return low === 'no iml' || low === 'nomor iml' || low === 'fo' || low === 'no_fo';
+            });
+            const timbang2Col = allCols.find(c => {
+                const low = c.toLowerCase();
+                return low.includes('timbang 2') || low.includes('netto');
+            });
+
+            if (!imlCol || !timbang2Col) {
+                showToast("Error", `Kolom Key (IML/FO) atau Value (Timbang 2/Netto) tidak terdeteksi.`, "error");
+                return;
+            }
+
+            const groups = {};
+            rawData.forEach(row => {
+                const val = cleanStr(safeGet(row, imlCol));
+                if (!val) return;
+                if (!groups[val]) groups[val] = [];
+                groups[val].push(row);
+            });
+
+            const problems = [];
+            const problemIMLKeys = new Set();
+
+            for (const key in groups) {
+                const rows = groups[key];
+                if (rows.length > 1) {
+                    const belumTimbang = rows.filter(r => {
+                        const val = cleanStr(safeGet(r, timbang2Col));
+                        return val === "" || val === "0" || val === "null" || val === "0.0";
+                    });
+
+                    if (belumTimbang.length > 0) {
+                        problemIMLKeys.add(key);
+                        problems.push({ key, total: rows.length, open: belumTimbang.length });
+                    }
+                }
+            }
+
+            mismatchWrap.classList.remove('hidden');
+            mismatchTitle.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg> HASIL PENCARIAN DUPLIKAT`;
+            mismatchTitle.className = "text-sm font-bold text-amber-700 uppercase flex items-center gap-2";
+            mismatchWrap.className = "mb-4 bg-amber-50 p-4 rounded-xl border border-amber-200 shadow-inner block";
+
+            let htmlOutput = "";
+            if (problems.length > 0) {
+                htmlOutput += `<div class="font-bold text-amber-800 mb-2 flex items-center gap-2"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> [${problems.length} IML GANDA BERMASALAH]</div>`;
+                htmlOutput += `<ul class="list-disc pl-6 space-y-1">` + problems.map(p => `<li><b class="font-mono text-[13px]">${p.key}</b>: Dobel ${p.total}x | Belum Selesai (Timbang 2): <span class="text-amber-700 font-bold">${p.open}</span> baris</li>`).join('') + `</ul>`;
+                filtered = rawData.filter(r => problemIMLKeys.has(cleanStr(safeGet(r, imlCol))));
+                mismatchDetail.className = "mismatch-box mt-2 bg-white border border-amber-200 text-slate-700 text-[13px]";
+            } else {
+                htmlOutput = `<div class="flex items-center gap-2 text-emerald-700 font-bold"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg> Aman! Tidak ada data duplikat yang belum selesai timbang.</div>`;
+                mismatchDetail.className = "mismatch-box mt-2 bg-white border border-emerald-200 text-slate-700 text-[13px]";
+                filtered = rawData.slice();
+            }
+            
+            mismatchDetail.innerHTML = htmlOutput;
+            showToast("Pencarian Selesai", "Tabel di-filter otomatis berdasarkan hasil.", "info");
+            switchMenu('menu-master');
+        });
+
+        // =====================================
+        // RESET & RENDER TABLE
+        // =====================================
+        
+        function resetAllFilters() {
+            globalSearch.value = ''; 
+            fromDate.value = ''; 
+            toDate.value = ''; 
+            pairInputEl.value = ''; 
+            mismatchWrap.classList.add('hidden'); // Sembunyikan alert log
+            filtered = [...rawData]; 
+            currentPage = 1;
+            renderTable();
+            showToast("Filter Dihapus", "Menampilkan seluruh Data Master.", "info");
         }
-      };
-      reader.readAsText(f);
-    });
 
-    btnReload.addEventListener('click', tryFetchSummary);
+        function applyFilters() {
+            const g = globalSearch.value.trim().toLowerCase();
+            // Memecah input teks menjadi array berdasarkan spasi
+            const searchTerms = g ? g.split(/\s+/) : []; 
+            
+            const fromD = fromDate.value ? new Date(fromDate.value) : null;
+            const toD = toDate.value ? new Date(toDate.value) : null;
+            
+            filtered = rawData.filter(row => {
+                // Pengecekan multi-keyword (semua kata harus ada di baris ini)
+                if (searchTerms.length > 0) {
+                    const rowString = JSON.stringify(row).toLowerCase();
+                    const matchAll = searchTerms.every(term => rowString.includes(term));
+                    if (!matchAll) return false;
+                }
+                
+                // Pengecekan tanggal
+                if (fromD || toD) {
+                    const tVal = safeGet(row, 'Tanggal Daftar') || safeGet(row, 'Tanggal_Daftar') || safeGet(row, 'TANGGAL DAFTAR') || safeGet(row, 'Tanggal') || '';
+                    const dt = parseDateLoose(tVal);
+                    if (!dt || (fromD && dt < fromD) || (toD && dt > new Date(toD.getTime() + 86399999))) return false;
+                }
+                return true;
+            });
+            
+            currentPage = 1; 
+            if(document.getElementById('menu-validasi').classList.contains('active') || document.getElementById('menu-duplikat').classList.contains('active')) {
+                switchMenu('menu-master');
+            } else {
+                renderTable();
+            }
+        }
 
-    function afterLoad() {
-      const cols = detectColumns(rawData);
-      renderColsToggle(cols);
-      filtered = rawData.slice();
+        function renderTable() {
+            perPage = Number(perPageEl.value);
+            const total = filtered.length; 
+            rowCount.textContent = total.toLocaleString();
+            
+            if (filtered.length < rawData.length && rawData.length > 0) {
+                btnClearTableFilter.classList.remove('hidden');
+            } else {
+                btnClearTableFilter.classList.add('hidden');
+            }
 
-      sortSelect.innerHTML = '<option value="">-- none --</option>';
-      cols.forEach(c => {
-        const sopt = document.createElement('option');
-        sopt.value = c;
-        sopt.textContent = c;
-        sortSelect.appendChild(sopt);
-      });
+            const totalPages = Math.max(1, Math.ceil(total / perPage));
+            if (currentPage > totalPages) currentPage = totalPages;
+            const pageRows = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
 
-      applyFilters();
-    }
+            tableHead.innerHTML = '';
+            visibleCols.forEach(c => {
+                const th = document.createElement('th'); th.className = 'px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider bg-slate-100/80 backdrop-blur';
+                th.textContent = c; tableHead.appendChild(th);
+            });
 
-    // =========================
-    // Controls
-    // =========================
-    btnApply.addEventListener('click', applyFilters);
+            tableBody.innerHTML = pageRows.length ? '' : '<tr><td colspan="100%" class="text-center py-16 text-slate-400">Tidak ada data yang cocok dengan filter / pencarian.</td></tr>';
+            pageRows.forEach((r, idx) => {
+                const tr = document.createElement('tr'); tr.className = `hover:bg-indigo-50/50 transition-colors cursor-default ${idx % 2 !== 0 ? 'bg-slate-50/50' : 'bg-white'}`;
+                visibleCols.forEach(c => {
+                    const td = document.createElement('td'); td.className = 'px-6 py-3 border-slate-100 text-slate-600 text-[13px] whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]';
+                    td.textContent = safeGet(r, c) || '-'; 
+                    td.title = td.textContent;
+                    tr.appendChild(td);
+                });
+                tableBody.appendChild(tr);
+            });
 
-    btnResetFilters.addEventListener('click', () => {
-      globalSearch.value = '';
-      minNetto.value = ''; maxNetto.value = '';
-      fromDate.value = ''; toDate.value = '';
-      colFilterSelect.value = ''; colFilterValue.value = '';
-      sortSelect.value = ''; sortDirEl.value = 'asc';
-      perPageEl.value = '10';
-      // tidak menghapus FO/Pairs saat reset filter (biar kamu ga kehilangan list)
-      applyFilters();
-    });
+            pageInfo.textContent = `${currentPage} / ${totalPages}`;
+            showing.textContent = `${total === 0 ? 0 : (currentPage - 1) * perPage + 1} - ${Math.min(total, currentPage * perPage)}`;
+        }
 
-    // ✅ Auto apply saat input FO / pairs / search berubah
-    globalSearch.addEventListener('input', () => applyFilters());
-    colFilterValue.addEventListener('input', () => applyFilters());
-    minNetto.addEventListener('input', () => applyFilters());
-    maxNetto.addEventListener('input', () => applyFilters());
-    fromDate.addEventListener('change', () => applyFilters());
-    toDate.addEventListener('change', () => applyFilters());
-    colFilterSelect.addEventListener('change', () => applyFilters());
-    sortSelect.addEventListener('change', () => applyFilters());
-    sortDirEl.addEventListener('change', () => applyFilters());
-    chkValidateNetto.addEventListener('change', () => applyFilters());
+        function afterLoad() {
+            const cols = detectColumns(rawData); renderColsToggle(cols);
+            filtered = rawData.slice(); applyFilters();
+        }
 
-    multiFOEl.addEventListener('input', () => applyFilters());
-    foNettoPairsEl.addEventListener('input', () => applyFilters());
+        // =====================================
+        // EVENT LISTENERS
+        // =====================================
+        
+        btnApply.addEventListener('click', applyFilters);
+        btnResetFilters.addEventListener('click', resetAllFilters); 
+        btnClearTableFilter.addEventListener('click', resetAllFilters); 
 
-    perPageEl.addEventListener('change', () => { currentPage = 1; renderTable(); });
-    prevPage.addEventListener('click', () => { if (currentPage>1) { currentPage--; renderTable(); } });
-    nextPage.addEventListener('click', () => {
-      const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
-      if (currentPage < totalPages) { currentPage++; renderTable(); }
-    });
+        ['change'].forEach(evt => {
+            fromDate.addEventListener(evt, applyFilters);
+            toDate.addEventListener(evt, applyFilters);
+        });
 
-    btnDownload.addEventListener('click', () => {
-      if (!filtered || !filtered.length) { alert('Tidak ada data untuk diunduh.'); return; }
-      const blob = new Blob([JSON.stringify(filtered, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'filtered_summary_mls.json';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    });
+        let searchTimeout;
+        globalSearch.addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(applyFilters, 500);
+        });
 
-    // Buttons FO & pairs
-    btnClearFO.addEventListener('click', () => {
-      multiFOEl.value = '';
-      applyFilters();
-    });
+        perPageEl.addEventListener('change', () => { currentPage = 1; savePrefs(); renderTable(); });
+        prevPage.addEventListener('click', () => { if (currentPage>1) { currentPage--; renderTable(); } });
+        nextPage.addEventListener('click', () => { if (currentPage < Math.ceil(filtered.length / perPage)) { currentPage++; renderTable(); } });
+        btnClearPairs.addEventListener('click', () => { pairInputEl.value = ''; });
 
-    btnClearPairs.addEventListener('click', () => {
-      foNettoPairsEl.value = '';
-      applyFilters();
-    });
+        document.getElementById('btnToggleCols').addEventListener('click', (e) => { e.stopPropagation(); document.getElementById('dropdownCols').classList.toggle('hidden'); });
+        document.addEventListener('click', () => document.getElementById('dropdownCols').classList.add('hidden'));
+        document.getElementById('dropdownCols').addEventListener('click', (e) => e.stopPropagation());
 
-    btnUsePairsFO.addEventListener('click', () => {
-      const { map } = parseFONettoPairs(foNettoPairsEl.value);
-      if (!map.size) { alert('Pair FO+Netto kosong / format belum benar.'); return; }
-      multiFOEl.value = Array.from(map.keys()).join('\n');
-      applyFilters();
-    });
-
-    // Mismatch viewer toggle
-    btnShowMismatch.addEventListener('click', () => {
-      mismatchWrap.classList.toggle('hidden');
-    });
-
-    // Auto try fetch on load
-    window.addEventListener('load', () => {
-      tryFetchSummary();
-    });
-  </script>
+    </script>
 </body>
 </html>
